@@ -1,0 +1,42 @@
+{
+  // dough-restful — Discord presence + profile API on one Worker.
+  // Docs: https://developers.cloudflare.com/workers/wrangler/configuration/
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dough-restful",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-09-23",
+  "account_id": "f87ee4b9600f437b8da1104d077418c3",
+  // nodejs_compat is not required; we only use Web/Workers APIs.
+  "observability": { "enabled": true },
+
+  // ---- Durable Object: single instance holds the Discord gateway socket ----
+  "durable_objects": {
+    "bindings": [
+      { "name": "GATEWAY", "class_name": "GatewayManager" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_classes": ["GatewayManager"] }
+  ],
+
+  // ---- KV: cache for profile/badge data (not available over the gateway) ----
+  // Create with: wrangler kv namespace create PROFILE_CACHE
+  // then paste the returned id below.
+  "kv_namespaces": [
+    { "binding": "PROFILE_CACHE", "id": "REPLACE_WITH_KV_ID" }
+  ],
+
+  // ---- Cron: nudge the Durable Object so the gateway stays connected ----
+  "triggers": {
+    "crons": ["*/2 * * * *"]
+  },
+
+  // Non-secret vars. Secrets (tokens) are set via `wrangler secret put`.
+  "vars": {
+    "DISCORD_API_VERSION": "10",
+    // Comma-separated guild IDs the bot is in that you want monitored.
+    // Leave empty to monitor every guild the bot can see.
+    "TRACKED_GUILD_IDS": "",
+    "PROFILE_CACHE_TTL_SECONDS": "300"
+  }
+}

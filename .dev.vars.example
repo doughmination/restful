@@ -1,0 +1,12 @@
+# Copy to `.dev.vars` for local `wrangler dev`, and set the same values in
+# production with `wrangler secret put <NAME>`.
+
+# Bot token — powers presence (gateway) and basic profile (/users/:id).
+# Discord Dev Portal > your app > Bot > Reset Token.
+DISCORD_BOT_TOKEN=
+
+# OPTIONAL user token — only used to read the RICH profile endpoint
+# (Nitro/boost/quest/orb/gifting badges, connected accounts, bio, pronouns).
+# WARNING: using a user token is self-botting and against Discord's ToS;
+# it can get the account banned. Leave blank to run bot-token-only.
+DISCORD_USER_TOKEN=

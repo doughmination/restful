@@ -44,13 +44,20 @@
 	},
 	// Non-secret vars. Secrets (tokens) are set via `wrangler secret put`.
 	"vars": {
-		"DISCORD_API_VERSION": "10",
+		// v9 matches what the web client actually uses; v9/v10 are interchangeable
+		// for the user/profile endpoints. Matching the client = more "trustworthy".
+		"DISCORD_API_VERSION": "9",
 		// Comma-separated guild IDs the bot is in that you want monitored.
 		// Leave empty to monitor every guild the bot can see.
 		"TRACKED_GUILD_IDS": "",
 		// Profile freshness window (seconds). Profiles change rarely and the
 		// user-token /profile route is heavily rate-limited, so keep this long.
 		// Presence stays live via the gateway regardless of this value.
-		"PROFILE_CACHE_TTL_SECONDS": "1800"
+		"PROFILE_CACHE_TTL_SECONDS": "1800",
+		// Current Discord client build number, sent in X-Super-Properties so the
+		// user-token /profile calls get the client's gentler rate limits. Keep it
+		// reasonably current — grab the latest from your client's devtools
+		// (look for "client_build_number") and bump this when it drifts.
+		"DISCORD_CLIENT_BUILD_NUMBER": "565311"
 	}
 }

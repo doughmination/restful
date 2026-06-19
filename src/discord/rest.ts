@@ -13,6 +13,81 @@ function apiBase(env: Env): string {
   return `https://discord.com/api/v${v}`;
 }
 
+// ---- client fingerprint -------------------------------------------------
+// Discord applies MUCH gentler rate limits to requests that look like its real
+// client. Bare API calls to /profile get throttled hard; the same calls with a
+// proper User-Agent + X-Super-Properties (base64 client-info) get the client's
+// treatment. Keep BROWSER_UA + the build number reasonably current — Discord
+// trusts up-to-date clients more. Build number is overridable via
+// DISCORD_CLIENT_BUILD_NUMBER so you can bump it without a code change.
+// Matched to a real Firefox web client (stable channel). Keep these in sync with
+// an actual client's X-Super-Properties — re-grab and bump when they drift.
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0";
+
+// A real web client also sends these per-"launch" identifiers. Discord doesn't
+// appear to validate them (Dustin runs static ones fine for months), so we mint
+// one set per worker start and reuse it — i.e. behave like a single client launch.
+let launchIdentity: {
+  client_launch_id: string;
+  launch_signature: string;
+  client_heartbeat_session_id: string;
+} | null = null;
+
+function getLaunchIdentity() {
+  if (!launchIdentity) {
+    launchIdentity = {
+      client_launch_id: crypto.randomUUID(),
+      launch_signature: crypto.randomUUID(),
+      client_heartbeat_session_id: crypto.randomUUID(),
+    };
+  }
+  return launchIdentity;
+}
+
+function superProperties(env: Env): string {
+  const build = Number(env.DISCORD_CLIENT_BUILD_NUMBER || "565311");
+  // Field set matched to a real Firefox WEB client. Do NOT add desktop-only
+  // fields (native_build_number, os_arch, X-Installation-ID, …) — a "Firefox"
+  // client that claims those is inconsistent and reads as MORE suspicious.
+  const props = {
+    os: "Windows",
+    browser: "Firefox",
+    device: "",
+    system_locale: "en-GB",
+    has_client_mods: false,
+    browser_user_agent: BROWSER_UA,
+    browser_version: "152.0",
+    os_version: "10",
+    referrer: "",
+    referring_domain: "",
+    referrer_current: "",
+    referring_domain_current: "",
+    release_channel: "stable",
+    client_build_number: build,
+    client_event_source: null,
+    ...getLaunchIdentity(),
+    client_app_state: "focused",
+  };
+  return btoa(JSON.stringify(props));
+}
+
+/** Headers that make a user-token request look like the official web client. */
+function clientHeaders(env: Env, token: string): Record<string, string> {
+  return {
+    Authorization: token,
+    "User-Agent": BROWSER_UA,
+    "X-Super-Properties": superProperties(env),
+    "X-Discord-Locale": "en-GB",
+    "X-Discord-Timezone": "Europe/London",
+    "X-Debug-Options": "bugReporterEnabled",
+    Accept: "*/*",
+    "Accept-Language": "en-GB,en;q=0.9",
+    Origin: "https://discord.com",
+    Referer: "https://discord.com/channels/@me",
+  };
+}
+
 export interface RawDiscordUser {
   id: string;
   username: string;
@@ -106,7 +181,7 @@ export async function fetchUserProfile(env: Env, id: string): Promise<UserProfil
 
   for (let i = 0; i < tokens.length; i++) {
     const idx = (start + i) % tokens.length;
-    const res = await fetch(url, { headers: { Authorization: tokens[idx] } });
+    const res = await fetch(url, { headers: clientHeaders(env, tokens[idx]) });
     if (res.ok) {
       return { data: (await res.json()) as RawProfileResponse, status: 200, retryAfter: 0 };
     }

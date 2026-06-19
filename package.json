@@ -8,7 +8,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "decode": "node scripts/decode-super-properties.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260617.1",

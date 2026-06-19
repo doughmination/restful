@@ -20,6 +20,9 @@ export interface Env {
   DISCORD_API_VERSION?: string;
   TRACKED_GUILD_IDS?: string;
   PROFILE_CACHE_TTL_SECONDS?: string;
+  /** Current Discord client build number, sent in X-Super-Properties so the
+   *  user-token /profile requests get the client's gentler rate limits. */
+  DISCORD_CLIENT_BUILD_NUMBER?: string;
 }
 
 export type DiscordStatus = "online" | "idle" | "dnd" | "offline";

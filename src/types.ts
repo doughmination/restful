@@ -73,6 +73,17 @@ export interface UnifiedUser {
   /** Rich profile only (needs user token); null otherwise. */
   bio: string | null;
   pronouns: string | null;
+  /** Nitro profile gradient — [top, bottom] ints; null if not set. */
+  theme_colors: number[] | null;
+  /** Nitro display-name styling — gradient colours + font/effect ids. */
+  display_name_styles: UnifiedDisplayNameStyles | null;
+}
+
+export interface UnifiedDisplayNameStyles {
+  /** 1 or 2 ints; the name-text gradient stops. */
+  colors: number[] | null;
+  font_id: number | null;
+  effect_id: number | null;
 }
 
 export interface UnifiedSpotify {

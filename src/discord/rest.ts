@@ -32,6 +32,11 @@ export interface RawDiscordUser {
   } | null;
   collectibles?: Record<string, unknown> | null;
   discriminator?: string;
+  display_name_styles?: {
+    colors?: number[] | null;
+    font_id?: number | null;
+    effect_id?: number | null;
+  } | null;
 }
 
 export interface RawProfileBadge {
@@ -43,7 +48,12 @@ export interface RawProfileBadge {
 
 export interface RawProfileResponse {
   user?: RawDiscordUser & { bio?: string };
-  user_profile?: { bio?: string; pronouns?: string; accent_color?: number | null };
+  user_profile?: {
+    bio?: string;
+    pronouns?: string;
+    accent_color?: number | null;
+    theme_colors?: number[] | null;
+  };
   badges?: RawProfileBadge[];
   connected_accounts?: Array<{ type: string; id: string; name: string; verified: boolean }>;
   premium_type?: number;

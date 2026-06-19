@@ -46,7 +46,12 @@ function flagBadges(flags: number): UnifiedBadge[] {
   return out;
 }
 
-function buildUser(u: RawDiscordUser, bio: string | null, pronouns: string | null): UnifiedUser {
+function buildUser(
+  u: RawDiscordUser,
+  bio: string | null,
+  pronouns: string | null,
+  themeColors: number[] | null
+): UnifiedUser {
   const pg = u.primary_guild;
   const clan =
     pg && pg.tag && pg.identity_enabled && pg.identity_guild_id
@@ -77,6 +82,16 @@ function buildUser(u: RawDiscordUser, bio: string | null, pronouns: string | nul
     collectibles: (u.collectibles as Record<string, unknown> | null) ?? null,
     bio,
     pronouns,
+    theme_colors: themeColors,
+    display_name_styles: u.display_name_styles
+      ? {
+          colors: Array.isArray(u.display_name_styles.colors)
+            ? u.display_name_styles.colors
+            : null,
+          font_id: u.display_name_styles.font_id ?? null,
+          effect_id: u.display_name_styles.effect_id ?? null,
+        }
+      : null,
   };
 }
 
@@ -140,6 +155,11 @@ async function buildFreshProfile(env: Env, id: string): Promise<ProfileResult | 
     const u = profile.user;
     const bio = profile.user_profile?.bio ?? u.bio ?? null;
     const pronouns = profile.user_profile?.pronouns ?? null;
+    const themeColors =
+      Array.isArray(profile.user_profile?.theme_colors) &&
+      profile.user_profile!.theme_colors!.length >= 2
+        ? profile.user_profile!.theme_colors!
+        : null;
 
     const badges: UnifiedBadge[] = [];
     // Flag badges from the user object (so classic badges are always present).
@@ -164,14 +184,14 @@ async function buildFreshProfile(env: Env, id: string): Promise<ProfileResult | 
       verified: !!c.verified,
     }));
 
-    return { user: buildUser(u, bio, pronouns), badges, connected_accounts: connected, source: "user" };
+    return { user: buildUser(u, bio, pronouns, themeColors), badges, connected_accounts: connected, source: "user" };
   }
 
   // Bot-only fallback.
   const u = await fetchBotUser(env, id);
   if (!u) return null;
   return {
-    user: buildUser(u, null, null),
+    user: buildUser(u, null, null, null),
     badges: flagBadges(u.public_flags ?? u.flags ?? 0),
     connected_accounts: [],
     source: "bot",

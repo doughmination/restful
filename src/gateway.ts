@@ -224,7 +224,13 @@ export class GatewayManager implements DurableObject {
         token: this.env.DISCORD_BOT_TOKEN,
         intents: INTENTS,
         properties: { os: "linux", browser: "dough-restful", device: "dough-restful" },
-        presence: { status: "invisible", activities: [], since: 0, afk: false },
+        presence: {
+          status: "idle",
+          afk: false,
+          since: 0,
+          // Custom status (type 4): the text shown is the `state` field.
+          activities: [{ name: "Custom Status", type: 4, state: "meow meow mrrp meow" }],
+        },
       },
     });
   }

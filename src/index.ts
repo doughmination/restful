@@ -91,7 +91,7 @@ export default {
       }
 
       if (sub === "profile") {
-        const profile = await getProfile(env, id);
+        const profile = await getProfile(env, id, ctx);
         if (!profile) {
           return json({ success: false, error: { code: "not_found", message: "User not found." } }, 404);
         }
@@ -99,7 +99,7 @@ export default {
       }
 
       // Unified record: profile (REST) + presence (gateway), in parallel.
-      const [profile, presence] = await Promise.all([getProfile(env, id), fetchPresence(env, id)]);
+      const [profile, presence] = await Promise.all([getProfile(env, id, ctx), fetchPresence(env, id)]);
       if (!profile) {
         return json({ success: false, error: { code: "not_found", message: "User not found." } }, 404);
       }

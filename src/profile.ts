@@ -84,18 +84,43 @@ function cacheKey(id: string): string {
   return `profile:${id}`;
 }
 
-/** Build profile from Discord, with a KV read-through cache. */
-export async function getProfile(env: Env, id: string): Promise<ProfileResult | null> {
+/**
+ * Build profile from Discord — LIVE-FIRST.
+ *
+ * Always fetches fresh from Discord so profile/badges/connections are current,
+ * and only falls back to the KV copy if the REST call fails (e.g. Discord is
+ * rate-limiting us). The KV copy is refreshed in the background, throttled to
+ * at most one write per TTL window so we don't blow KV write limits.
+ */
+export async function getProfile(
+  env: Env,
+  id: string,
+  ctx?: ExecutionContext
+): Promise<ProfileResult | null> {
+  const fresh = await buildFreshProfile(env, id);
+  if (fresh) {
+    const refresh = maybeRefreshCache(env, id, fresh);
+    if (ctx) ctx.waitUntil(refresh);
+    else await refresh;
+    return fresh;
+  }
+
+  // Discord REST failed — serve last-known-good from KV if we have it.
   const cached = await env.PROFILE_CACHE.get(cacheKey(id), "json");
   if (cached) {
     const c = cached as Omit<ProfileResult, "source">;
     return { ...c, source: "cache" };
   }
+  return null;
+}
 
-  const result = await buildFreshProfile(env, id);
-  if (!result) return null;
-
+/** Write the fallback copy to KV, but at most once per TTL window. */
+async function maybeRefreshCache(env: Env, id: string, result: ProfileResult): Promise<void> {
   const ttl = Math.max(60, Number(env.PROFILE_CACHE_TTL_SECONDS || "300"));
+  const { metadata } = await env.PROFILE_CACHE.getWithMetadata(cacheKey(id));
+  const lastWrite = (metadata as { t?: number } | null)?.t ?? 0;
+  if (Date.now() - lastWrite < ttl * 1000) return; // throttled
+
   await env.PROFILE_CACHE.put(
     cacheKey(id),
     JSON.stringify({
@@ -103,9 +128,8 @@ export async function getProfile(env: Env, id: string): Promise<ProfileResult | 
       badges: result.badges,
       connected_accounts: result.connected_accounts,
     }),
-    { expirationTtl: ttl }
+    { expirationTtl: ttl * 2, metadata: { t: Date.now() } }
   );
-  return result;
 }
 
 async function buildFreshProfile(env: Env, id: string): Promise<ProfileResult | null> {

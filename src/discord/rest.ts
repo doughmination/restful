@@ -70,18 +70,34 @@ export async function fetchBotUser(env: Env, id: string): Promise<RawDiscordUser
   return (await res.json()) as RawDiscordUser;
 }
 
+export interface UserProfileFetch {
+  data: RawProfileResponse | null;
+  /** HTTP status (0 = not attempted / no token). */
+  status: number;
+  /** Seconds from a 429 Retry-After header, when present. */
+  retryAfter: number;
+}
+
 /**
- * Rich profile via USER token (self-bot — ToS risk). Returns null if no user
- * token is configured or the request fails, so callers degrade gracefully.
+ * Rich profile via USER token (self-bot — ToS risk). Reports the HTTP status so
+ * callers can tell a 429 rate-limit (back off) apart from a 401/403 token issue,
+ * rather than silently degrading to the bot token.
  */
-export async function fetchUserProfile(env: Env, id: string): Promise<RawProfileResponse | null> {
-  if (!env.DISCORD_USER_TOKEN) return null;
+export async function fetchUserProfile(env: Env, id: string): Promise<UserProfileFetch> {
+  if (!env.DISCORD_USER_TOKEN) return { data: null, status: 0, retryAfter: 0 };
   const url =
     `${apiBase(env)}/users/${id}/profile` +
     `?with_mutual_guilds=false&with_mutual_friends=false`;
   const res = await fetch(url, {
     headers: { Authorization: env.DISCORD_USER_TOKEN },
   });
-  if (!res.ok) return null;
-  return (await res.json()) as RawProfileResponse;
+  if (!res.ok) {
+    const retryAfter = Number(res.headers.get("retry-after")) || 0;
+    console.warn(
+      `[dough-restful] user-token /users/${id}/profile -> HTTP ${res.status}` +
+        (retryAfter ? ` (retry ${retryAfter}s)` : "")
+    );
+    return { data: null, status: res.status, retryAfter };
+  }
+  return { data: (await res.json()) as RawProfileResponse, status: 200, retryAfter: 0 };
 }

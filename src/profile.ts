@@ -99,43 +99,93 @@ function cacheKey(id: string): string {
   return `profile:${id}`;
 }
 
+type CachedProfile = Omit<ProfileResult, "source">;
+
 /**
- * Build profile from Discord — LIVE-FIRST.
+ * Get a user's profile — CACHE-FIRST, with a bot+user merge fallback.
  *
- * Always fetches fresh from Discord so profile/badges/connections are current,
- * and only falls back to the KV copy if the REST call fails (e.g. Discord is
- * rate-limiting us). The KV copy is refreshed in the background, throttled to
- * at most one write per TTL window so we don't blow KV write limits.
+ * Profiles change rarely and Discord rate-limits the user-token /profile
+ * endpoint hard, so we serve a cached rich profile for PROFILE_CACHE_TTL_SECONDS
+ * before bothering Discord again — this is what stops the rate-limiting.
+ *
+ * When a refresh CAN only reach the bot token (the rich call got 429'd/blocked),
+ * we don't downgrade: we keep the fresh bot base and layer the cached rich
+ * fields (theme_colors, display_name_styles, bio, pronouns, rich badges +
+ * connections) back over it — "use both at once" — so those never vanish during
+ * a rate-limit window. Presence is unaffected; it streams from the gateway DO.
  */
 export async function getProfile(
   env: Env,
   id: string,
   ctx?: ExecutionContext
 ): Promise<ProfileResult | null> {
-  const fresh = await buildFreshProfile(env, id);
-  if (fresh) {
-    const refresh = maybeRefreshCache(env, id, fresh);
-    if (ctx) ctx.waitUntil(refresh);
-    else await refresh;
-    return fresh;
+  const ttl = Math.max(60, Number(env.PROFILE_CACHE_TTL_SECONDS || "300"));
+  const got = await env.PROFILE_CACHE.getWithMetadata(cacheKey(id), "json");
+  const cached = (got.value as CachedProfile | null) ?? null;
+  const lastWrite = (got.metadata as { t?: number } | null)?.t ?? 0;
+  const cacheFresh = !!cached && Date.now() - lastWrite < ttl * 1000;
+
+  // 1) Fresh rich cache -> serve it without touching Discord at all.
+  if (cached && cacheFresh) return { ...cached, source: "cache" };
+
+  // 2) Cache stale or missing -> fetch live. Skip the rich (user-token) attempt
+  //    while we're in a 429 cooldown so the rate-limit window can clear instead
+  //    of us hammering it on every request and never recovering.
+  const cdRaw = await env.PROFILE_CACHE.get(COOLDOWN_KEY);
+  const tryRich = !(cdRaw && Date.now() < Number(cdRaw));
+
+  const { result: built, richStatus, retryAfter } = await buildFreshProfile(env, id, tryRich);
+
+  if (richStatus === 429) {
+    // back off all rich attempts for a while (honour Retry-After, clamp 30s–5m)
+    const backoffMs = Math.min(Math.max(retryAfter, 30), 300) * 1000;
+    const write = env.PROFILE_CACHE.put(COOLDOWN_KEY, String(Date.now() + backoffMs), {
+      expirationTtl: Math.ceil(backoffMs / 1000) + 60,
+    });
+    if (ctx) ctx.waitUntil(write);
+    else await write;
   }
 
-  // Discord REST failed — serve last-known-good from KV if we have it.
-  const cached = await env.PROFILE_CACHE.get(cacheKey(id), "json");
-  if (cached) {
-    const c = cached as Omit<ProfileResult, "source">;
-    return { ...c, source: "cache" };
+  if (built && built.source === "user") {
+    const write = writeCache(env, id, built);
+    if (ctx) ctx.waitUntil(write);
+    else await write;
+    return built;
   }
+
+  if (built && built.source === "bot") {
+    // Rich fetch skipped/degraded: fresh bot base + cached rich extras.
+    if (cached) return { ...mergeRichOverBot(cached, built), source: "cache" };
+    return built; // nothing cached yet — bot-only is the best we have
+  }
+
+  // 3) Discord gave us nothing — serve stale cache if present.
+  if (cached) return { ...cached, source: "cache" };
   return null;
 }
 
-/** Write the fallback copy to KV, but at most once per TTL window. */
-async function maybeRefreshCache(env: Env, id: string, result: ProfileResult): Promise<void> {
-  const ttl = Math.max(60, Number(env.PROFILE_CACHE_TTL_SECONDS || "300"));
-  const { metadata } = await env.PROFILE_CACHE.getWithMetadata(cacheKey(id));
-  const lastWrite = (metadata as { t?: number } | null)?.t ?? 0;
-  if (Date.now() - lastWrite < ttl * 1000) return; // throttled
+/** Global KV key holding the timestamp until which rich fetches are paused. */
+const COOLDOWN_KEY = "profile:rich-cooldown";
 
+/** Layer the rich-only fields from cache over a fresh bot-token result. */
+function mergeRichOverBot(cached: CachedProfile, bot: ProfileResult): CachedProfile {
+  return {
+    user: {
+      ...bot.user,
+      bio: cached.user.bio,
+      pronouns: cached.user.pronouns,
+      theme_colors: cached.user.theme_colors,
+      display_name_styles: cached.user.display_name_styles,
+    },
+    badges: cached.badges.length ? cached.badges : bot.badges,
+    connected_accounts: cached.connected_accounts.length
+      ? cached.connected_accounts
+      : bot.connected_accounts,
+  };
+}
+
+/** Persist a rich profile so it can drive cache-hits and bot-merge fallbacks. */
+async function writeCache(env: Env, id: string, result: ProfileResult): Promise<void> {
   await env.PROFILE_CACHE.put(
     cacheKey(id),
     JSON.stringify({
@@ -143,13 +193,26 @@ async function maybeRefreshCache(env: Env, id: string, result: ProfileResult): P
       badges: result.badges,
       connected_accounts: result.connected_accounts,
     }),
-    { expirationTtl: ttl * 2, metadata: { t: Date.now() } }
+    { expirationTtl: 86400, metadata: { t: Date.now() } }
   );
 }
 
-async function buildFreshProfile(env: Env, id: string): Promise<ProfileResult | null> {
-  // Rich path first (if user token present); fall back to bot-only.
-  const profile = await fetchUserProfile(env, id);
+interface BuildResult {
+  result: ProfileResult | null;
+  /** HTTP status of the rich (user-token) attempt; 0 if it was skipped. */
+  richStatus: number;
+  /** Retry-After seconds from a 429, when present. */
+  retryAfter: number;
+}
+
+async function buildFreshProfile(env: Env, id: string, tryRich: boolean): Promise<BuildResult> {
+  // Rich path first (unless we're cooling down from a 429); fall back to bot.
+  const rich = tryRich
+    ? await fetchUserProfile(env, id)
+    : { data: null, status: 0, retryAfter: 0 };
+  const richStatus = rich.status;
+  const retryAfter = rich.retryAfter;
+  const profile = rich.data;
 
   if (profile && profile.user) {
     const u = profile.user;
@@ -184,16 +247,24 @@ async function buildFreshProfile(env: Env, id: string): Promise<ProfileResult | 
       verified: !!c.verified,
     }));
 
-    return { user: buildUser(u, bio, pronouns, themeColors), badges, connected_accounts: connected, source: "user" };
+    return {
+      result: { user: buildUser(u, bio, pronouns, themeColors), badges, connected_accounts: connected, source: "user" },
+      richStatus,
+      retryAfter,
+    };
   }
 
   // Bot-only fallback.
   const u = await fetchBotUser(env, id);
-  if (!u) return null;
+  if (!u) return { result: null, richStatus, retryAfter };
   return {
-    user: buildUser(u, null, null, null),
-    badges: flagBadges(u.public_flags ?? u.flags ?? 0),
-    connected_accounts: [],
-    source: "bot",
+    result: {
+      user: buildUser(u, null, null, null),
+      badges: flagBadges(u.public_flags ?? u.flags ?? 0),
+      connected_accounts: [],
+      source: "bot",
+    },
+    richStatus,
+    retryAfter,
   };
 }

@@ -59,6 +59,47 @@ export interface UnifiedConnectedAccount {
   verified: boolean;
 }
 
+/** Human-readable collectible kind, mapped from Discord's numeric product type. */
+export type WishlistItemType =
+  | "avatar_decoration"
+  | "profile_effect"
+  | "nameplate"
+  | "bundle"
+  | "variants_group"
+  | "external_sku"
+  | "unknown";
+
+/**
+ * One Discord Shop collectible a user has saved to their profile wishlist.
+ * The SKU + per-user settings come from the profile's `wishlist_settings`; the
+ * name/type/images are resolved from the collectible product so the frontend
+ * can render the wishlist directly. `static_image_url` is set when known,
+ * `animated_image_url`/`video_url` filled for collectibles that animate.
+ */
+export interface UnifiedWishlistItem {
+  /** SKU id of the collectible (stable identifier for the shop item). */
+  sku_id: string;
+  /** Human-readable collectible kind. */
+  type: WishlistItemType;
+  /** Raw Discord numeric product type (0/1/2/1000/…); null if unresolved. */
+  type_id: number | null;
+  name: string | null;
+  /** Short description/summary when the product provides one. */
+  summary: string | null;
+  /** Still image (PNG/APNG first frame). */
+  static_image_url: string | null;
+  /** Animated image (APNG) when the collectible animates. */
+  animated_image_url: string | null;
+  /** Video preview (WEBM/MP4) when present — mainly profile effects/nameplates. */
+  video_url: string | null;
+  /** Accessibility label / alt text from Discord. */
+  label: string | null;
+  /** Wishlist visibility from the profile (1 = everyone; null if unknown). */
+  visibility: number | null;
+  /** ISO timestamp the item was added/updated on the wishlist; null if unknown. */
+  updated_at: string | null;
+}
+
 export interface UnifiedUser {
   id: string;
   username: string;
@@ -125,6 +166,10 @@ export interface UnifiedRecord {
   presence: UnifiedPresence | null;
   badges: UnifiedBadge[];
   connected_accounts: UnifiedConnectedAccount[];
+  /** Discord Shop collectibles the user saved to their profile wishlist.
+   *  null when unavailable (no user token / proxy, or the source was blocked);
+   *  [] means we reached the source and the wishlist is empty. */
+  wishlist: UnifiedWishlistItem[] | null;
   updated_at: number;
   source: {
     presence: "gateway" | "none";

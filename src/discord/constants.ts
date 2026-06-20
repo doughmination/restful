@@ -76,3 +76,43 @@ export function clanBadgeUrl(guildId: string, badge: string): string {
 export function emojiUrl(id: string, animated: boolean): string {
   return `${CDN}/emojis/${id}.${animated ? "gif" : "png"}?size=32`;
 }
+
+// ---- collectibles (Shop wishlist) ---------------------------------------
+// Discord product type ids -> our human-readable kind. See Userdoccers
+// "Collectible Product Type". 1000/2000/3000 are bundle/variants/external.
+import type { WishlistItemType } from "../types";
+
+export function collectibleTypeName(type: number | null | undefined): WishlistItemType {
+  switch (type) {
+    case 0:
+      return "avatar_decoration";
+    case 1:
+      return "profile_effect";
+    case 2:
+      return "nameplate";
+    case 1000:
+      return "bundle";
+    case 2000:
+      return "variants_group";
+    case 3000:
+      return "external_sku";
+    default:
+      return "unknown";
+  }
+}
+
+/** Static preset image for an avatar decoration (APNG served at .png). */
+export function avatarDecorationImageUrl(asset: string): string {
+  return `${CDN}/avatar-decoration-presets/${asset}.png`;
+}
+
+/**
+ * Nameplate images. `asset` is a path prefix (e.g. "nameplates/nameplate_x/");
+ * Discord serves a still PNG and a WEBM video under /assets/collectibles/.
+ */
+export function nameplateStaticUrl(asset: string): string {
+  return `${CDN}/assets/collectibles/${asset}static.png`;
+}
+export function nameplateVideoUrl(asset: string): string {
+  return `${CDN}/assets/collectibles/${asset}asset.webm`;
+}

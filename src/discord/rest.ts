@@ -134,6 +134,10 @@ export interface RawProfileResponse {
   premium_type?: number;
   premium_since?: string | null;
   premium_guild_since?: string | null;
+  /** Profile wishlist: map of collectible SKU id -> per-user settings. The
+   *  product details (name/images) are NOT here — resolve each SKU separately
+   *  via fetchCollectibleProduct. */
+  wishlist_settings?: Record<string, { visibility?: number; updated_at?: string }>;
 }
 
 /** Basic user via bot token. Returns null on 404 / failure. */
@@ -196,4 +200,44 @@ export async function fetchUserProfile(env: Env, id: string): Promise<UserProfil
     if (res.status !== 429) break;
   }
   return { data: null, status: lastStatus, retryAfter: lastRetryAfter };
+}
+
+// ---- collectible products (resolve wishlist SKUs -> name + images) ------
+
+export interface CollectibleFetch {
+  /** Raw collectible product JSON; null on failure. */
+  raw: unknown | null;
+  /** HTTP status (0 = not attempted / no token). */
+  status: number;
+}
+
+/**
+ * Resolve one collectible SKU to its product (name, type, item image assets).
+ * The Shop product endpoint is read with the user token + client fingerprint
+ * (same path as the rich profile); if no user token is configured we fall back
+ * to the bot token, which is enough for many Shop reads. Product metadata is
+ * effectively static, so callers cache the result per SKU.
+ */
+export async function fetchCollectibleProduct(env: Env, skuId: string): Promise<CollectibleFetch> {
+  // country_code is hardcoded to GB — product name/images don't vary by region,
+  // it's only here because the Shop endpoint expects the param.
+  const params = new URLSearchParams({ include_bundles: "true", country_code: "GB" });
+  const url = `${apiBase(env)}/collectibles-products/${skuId}?${params.toString()}`;
+
+  // Prefer user token(s) with the client fingerprint; fail over on a 429.
+  const tokens = userTokens(env);
+  const start = tokens.length ? Math.floor(Math.random() * tokens.length) : 0;
+  let lastStatus = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const idx = (start + i) % tokens.length;
+    const res = await fetch(url, { headers: clientHeaders(env, tokens[idx]) });
+    if (res.ok) return { raw: await res.json().catch(() => null), status: 200 };
+    lastStatus = res.status;
+    if (res.status !== 429) break;
+  }
+
+  // Bot-token fallback (works without a user token in many cases).
+  const res = await fetch(url, { headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` } });
+  if (res.ok) return { raw: await res.json().catch(() => null), status: 200 };
+  return { raw: null, status: lastStatus || res.status };
 }

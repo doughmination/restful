@@ -108,6 +108,7 @@ export default {
         presence,
         badges: profile.badges,
         connected_accounts: profile.connected_accounts,
+        wishlist: profile.wishlist ?? null,
         updated_at: Date.now(),
         source: { presence: presence ? "gateway" : "none", profile: profile.source },
       };

@@ -60,6 +60,9 @@ export interface UnifiedBadge {
  * unofficial third-party service.
  */
 export interface UnifiedClientBadge {
+  /** Stable id derived from tooltip+icon_url (the upstream API has no id of
+   *  its own — these are arbitrary per-user badges, not a fixed catalog). */
+  id: string;
   /** Tooltip text the client mod shows for this badge. */
   tooltip: string;
   /** Absolute URL to the badge icon (png/gif/webp/svg). */

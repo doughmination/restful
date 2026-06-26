@@ -118,6 +118,41 @@ export function emojiUrl(id: string, animated: boolean): string {
   return `${CDN}/emojis/${id}.${animated ? "gif" : "png"}?size=32`;
 }
 
+/**
+ * Resolve a Rich Presence activity asset (`activity.assets.large_image` /
+ * `small_image`) to an actual image URL. Discord prefixes these with a
+ * scheme for "external" assets (streaming previews, proxied media); a bare
+ * hash with no prefix is a normal app-asset on the CDN.
+ */
+
+// asset URL scheme handling adapted from pxseu/lanyard-ui, MPL-2.0
+export function activityAssetUrl(raw: string | undefined | null, applicationId?: string | null): string | null {
+  if (!raw) return null;
+
+  const split = raw.split(":");
+  if (split.length < 2) {
+    // Plain hash — standard Rich Presence app-asset, needs the app id.
+    return applicationId ? `${CDN}/app-assets/${applicationId}/${raw}.png` : null;
+  }
+
+  switch (split[0]) {
+    case "mp":
+      // External Discord-proxied asset (e.g. attachment, embed image).
+      return `https://media.discordapp.net/${split.slice(1).join(":")}`;
+    case "twitch":
+      // Twitch stream preview.
+      return `https://static-cdn.jtvnw.net/previews-ttv/live_user_${split[1]}.png`;
+    case "youtube":
+      // YouTube live-stream thumbnail.
+      return `https://i.ytimg.com/vi/${split[1]}/hqdefault_live.jpg`;
+    case "spotify":
+      // Spotify album/cover art.
+      return `https://i.scdn.co/image/${split[1]}`;
+    default:
+      return applicationId ? `${CDN}/app-assets/${applicationId}/${raw}.png` : null;
+  }
+}
+
 // ---- collectibles (Shop wishlist) ---------------------------------------
 // Discord product type ids -> our human-readable kind. See Userdoccers
 // "Collectible Product Type". 1000/2000/3000 are bundle/variants/external.

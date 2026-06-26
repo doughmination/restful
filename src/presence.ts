@@ -3,7 +3,7 @@
  * ===================================================================== */
 
 import type { DiscordStatus, UnifiedCustomStatus, UnifiedPresence, UnifiedSpotify } from "./types";
-import { emojiUrl } from "./discord/constants";
+import { activityAssetUrl, emojiUrl } from "./discord/constants";
 
 export interface RawPresence {
   user: { id: string };
@@ -54,8 +54,29 @@ function extractCustomStatus(activities: any[]): UnifiedCustomStatus | null {
   };
 }
 
+/**
+ * Resolve an activity's `assets.large_image`/`small_image` (which can be a
+ * bare app-asset hash, or a scheme-prefixed external reference like
+ * "twitch:username" for streams) into actual, directly-loadable URLs.
+ * Leaves the original asset fields untouched and just adds the resolved
+ * `*_url` companions, so this is purely additive.
+ */
+function enrichActivityAssets(a: any): any {
+  if (!a || !a.assets) return a;
+  const appId = a.application_id ?? null;
+  return {
+    ...a,
+    assets: {
+      ...a.assets,
+      large_image_url: activityAssetUrl(a.assets.large_image, appId),
+      small_image_url: activityAssetUrl(a.assets.small_image, appId),
+    },
+  };
+}
+
 export function buildPresence(raw: RawPresence): UnifiedPresence {
-  const activities = Array.isArray(raw.activities) ? raw.activities : [];
+  const rawActivities = Array.isArray(raw.activities) ? raw.activities : [];
+  const activities = rawActivities.map(enrichActivityAssets);
   const status: DiscordStatus = raw.status ?? "offline";
   const cs = raw.client_status || {};
   const spotify = extractSpotify(activities);

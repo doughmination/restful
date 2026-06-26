@@ -112,18 +112,43 @@ async function fetchClientBadges(id: string): Promise<UnifiedClientBadge[] | und
 }
 
 /**
- * Deterministic id for a badge — the upstream API has no id field of its
+ * Host -> display-name table. The equicord endpoint aggregates several
+ * underlying services, and the only thing in the response that tells us
+ * which one a given badge actually came from is the hostname of its icon
+ * URL. Add new services here as we spot them in the wild — anything not
+ * listed falls back to "Equicord" (the aggregator's own native badges,
+ * e.g. /public/badges/equicord.png, live on that host too).
+ *
+ * Still TBD / not yet seen in a sample response: ReviewDB, Aero, Aliucord,
+ * Raincord, Velocity, Enmity, Replugged, Paicord.
+ */
+const SOURCE_BY_HOST: Record<string, string> = {
+  "gb.obamabot.me": "BadgeVault",
+  "nekocord.dev": "Neokcord",
+  "badges.vencord.dev": "Vencord",
+  "badges.equicord.org": "Equicord",
+};
+
+/** Falls back to "Equicord" for unknown/malformed hosts. */
+function sourceForIconUrl(iconUrl: string): string {
+  try {
+    const host = new URL(iconUrl).hostname;
+    return SOURCE_BY_HOST[host] ?? "Equicord";
+  } catch {
+    return "Equicord";
+  }
+}
+
+/**
+ * Human-readable id for a badge — the upstream API has no id field of its
  * own (these are arbitrary per-user badges, not a fixed catalog), so we
- * derive a stable short hash from tooltip+icon_url. Same badge -> same id
- * every time, which is all that's needed for React keys / dedup / lookups.
+ * build one from the originating service + tooltip, e.g.
+ * "GlobalBadges - Moffman" or "Equicord - Equicord Contributor".
+ *
+ * Note: this is NOT guaranteed unique — two badges from the same service
+ * with the same tooltip text collide. Fine for display/grouping; if exact
+ * per-badge identity is ever needed, icon_url is the only unique field.
  */
 function badgeId(tooltip: string, iconUrl: string): string {
-  const input = `${tooltip}\u0000${iconUrl}`;
-  // FNV-1a 32-bit — fast, sync, good enough distribution for this purpose.
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return `${sourceForIconUrl(iconUrl)} - ${tooltip}`;
 }

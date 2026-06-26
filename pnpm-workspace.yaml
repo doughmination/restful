@@ -5,5 +5,5 @@ allowBuilds:
   sharp: true
   workerd: true
 minimumReleaseAgeExclude:
-  - miniflare@4.20260625.1
+  - miniflare@4.20260625.0 || 4.20260625.1
   - wrangler@4.105.0

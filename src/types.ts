@@ -52,6 +52,20 @@ export interface UnifiedBadge {
   source: "flags" | "profile";
 }
 
+/**
+ * A badge sourced from a third-party client-mod badge aggregator
+ * (badges.equicord.org), covering Vencord/Equicord/Aliucord/etc + the
+ * "global badges" set it aggregates. Deliberately separate from
+ * `badges` (Discord's own flag/profile badges) since these come from an
+ * unofficial third-party service.
+ */
+export interface UnifiedClientBadge {
+  /** Tooltip text the client mod shows for this badge. */
+  tooltip: string;
+  /** Absolute URL to the badge icon (png/gif/webp/svg). */
+  icon_url: string;
+}
+
 export interface UnifiedConnectedAccount {
   type: string;
   id: string;
@@ -182,6 +196,10 @@ export interface UnifiedRecord {
   /** null when the user shares no monitored guild with the bot. */
   presence: UnifiedPresence | null;
   badges: UnifiedBadge[];
+  /** Third-party client-mod badges (Vencord/Equicord/Aliucord/etc, via
+   *  badges.equicord.org's "global badges" aggregation). [] if none found,
+   *  null if the aggregator couldn't be reached. */
+  clientBadges: UnifiedClientBadge[] | null;
   connected_accounts: UnifiedConnectedAccount[];
   /** Discord Shop collectibles the user saved to their profile wishlist.
    *  null when unavailable (no user token / proxy, or the source was blocked);

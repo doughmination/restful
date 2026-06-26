@@ -115,6 +115,7 @@ export default {
         user: profile.user,
         presence,
         badges: profile.badges,
+        clientBadges: profile.clientBadges,
         connected_accounts: profile.connected_accounts,
         wishlist: profile.wishlist ?? null,
         updated_at: Date.now(),

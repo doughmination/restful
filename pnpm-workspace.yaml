@@ -3,5 +3,11 @@ allowBuilds:
   sharp: true
   workerd: true
 minimumReleaseAgeExclude:
-  - miniflare@4.20260617.1
-  - wrangler@4.103.0
+  - miniflare@4.20260617.1 || 4.20260625.0
+  - wrangler@4.103.0 || 4.105.0
+  - '@cloudflare/workerd-darwin-64@1.20260625.1'
+  - '@cloudflare/workerd-darwin-arm64@1.20260625.1'
+  - '@cloudflare/workerd-linux-64@1.20260625.1'
+  - '@cloudflare/workerd-linux-arm64@1.20260625.1'
+  - '@cloudflare/workerd-windows-64@1.20260625.1'
+  - workerd@1.20260625.1

@@ -9,10 +9,12 @@
 import type {
   Env,
   UnifiedBadge,
+  UnifiedClientBadge,
   UnifiedConnectedAccount,
   UnifiedUser,
   UnifiedWishlistItem,
 } from "./types";
+import { getClientBadges } from "./discord/clientBadges";
 import {
   avatarDecorationImageUrl,
   avatarUrl,
@@ -37,6 +39,8 @@ import {
 export interface ProfileResult {
   user: UnifiedUser;
   badges: UnifiedBadge[];
+  /** Third-party client-mod badges (Vencord/Equicord/Aliucord/etc). */
+  clientBadges: UnifiedClientBadge[] | null;
   connected_accounts: UnifiedConnectedAccount[];
   /** Shop collectibles saved to the profile; null when unavailable. */
   wishlist: UnifiedWishlistItem[] | null;
@@ -393,6 +397,7 @@ function mergeRichOverBot(cached: CachedProfile, bot: ProfileResult): CachedProf
       display_name_styles: cached.user.display_name_styles,
     },
     badges: cached.badges.length ? cached.badges : bot.badges,
+    clientBadges: bot.clientBadges != null ? bot.clientBadges : cached.clientBadges,
     connected_accounts: cached.connected_accounts.length
       ? cached.connected_accounts
       : bot.connected_accounts,
@@ -411,6 +416,7 @@ async function writeCache(env: Env, id: string, result: ProfileResult): Promise<
     JSON.stringify({
       user: result.user,
       badges: result.badges,
+      clientBadges: result.clientBadges,
       connected_accounts: result.connected_accounts,
       wishlist: result.wishlist,
     }),
@@ -481,9 +487,17 @@ async function buildFreshProfile(
     // Wishlist rides on the rich profile (`wishlist_settings`); resolve its
     // SKUs to names + images (cache-first). null if the field is absent.
     const wishlist = await buildWishlist(env, profile, ctx, force);
+    const clientBadges = await getClientBadges(env, id, ctx, force);
 
     return {
-      result: { user: buildUser(u, bio, pronouns, themeColors), badges, connected_accounts: connected, wishlist, source: "user" },
+      result: {
+        user: buildUser(u, bio, pronouns, themeColors),
+        badges,
+        clientBadges,
+        connected_accounts: connected,
+        wishlist,
+        source: "user",
+      },
       richStatus,
       retryAfter,
     };
@@ -493,10 +507,12 @@ async function buildFreshProfile(
   // have here, so it's null and the cache-merge keeps any previously cached one.
   const u = await fetchBotUser(env, id);
   if (!u) return { result: null, richStatus, retryAfter };
+  const clientBadges = await getClientBadges(env, id, ctx, force);
   return {
     result: {
       user: buildUser(u, null, null, null),
       badges: flagBadges(u.public_flags ?? u.flags ?? 0),
+      clientBadges,
       connected_accounts: [],
       wishlist: null,
       source: "bot",

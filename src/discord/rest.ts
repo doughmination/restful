@@ -257,3 +257,39 @@ export async function fetchWishlist(env: Env, wishlistId: string): Promise<Wishl
   }
   return { raw: null, status: lastStatus };
 }
+
+
+export interface RawInviteResponse {
+  code: string;
+  expires_at?: string | null;
+  approximate_member_count?: number;
+  approximate_presence_count?: number;
+  guild?: {
+    id: string;
+    name: string;
+    icon: string | null;
+    splash?: string | null;
+    banner?: string | null;
+    description?: string | null;
+    verification_level?: number;
+    vanity_url_code?: string | null;
+    nsfw_level?: number;
+    premium_subscription_count?: number;
+    features?: string[];
+  };
+  channel?: { id: string; name: string; type: number };
+}
+
+/** Resolve a server invite code to guild info. Returns null on 404/failure. */
+export async function fetchInvite(env: Env, code: string): Promise<RawInviteResponse | null> {
+  const url =
+    `${apiBase(env)}/invites/${encodeURIComponent(code)}` +
+    `?with_counts=true&with_expiration=true`;
+  // Bot token gives slightly better rate limits than an unauthenticated call;
+  // falls back to unauthenticated if no bot token configured.
+  const headers: Record<string, string> = {};
+  if (env.DISCORD_BOT_TOKEN) headers.Authorization = `Bot ${env.DISCORD_BOT_TOKEN}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) return null;
+  return (await res.json()) as RawInviteResponse;
+}

@@ -27,6 +27,17 @@ export interface Env {
 
 export type DiscordStatus = "online" | "idle" | "dnd" | "offline";
 
+export interface UnifiedGuildInvite {
+  id: string;
+  name: string;
+  icon_url: string | null;
+  banner_url: string | null;
+  splash_url: string | null;
+  description: string | null;
+  member_count: number | null;
+  online_count: number | null;
+}
+
 export interface UnifiedAvatarDecoration {
   asset: string;
   sku_id: string | null;

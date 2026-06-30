@@ -11,9 +11,10 @@
  * The Durable Object is a singleton ("gateway") holding the Discord socket.
  * ===================================================================== */
 
-import type { ApiEnvelope, Env, UnifiedPresence, UnifiedRecord } from "./types";
+import type { ApiEnvelope, Env, UnifiedPresence, UnifiedRecord, UnifiedGuildInvite } from "./types";
 import { getProfile } from "./profile";
 import { GatewayManager } from "./gateway";
+import { getGuildInvite } from "./guild";
 
 export { GatewayManager };
 
@@ -69,16 +70,32 @@ export default {
           service: "Doughmination Restful",
           description: "Combined Discord presence + profile/badges API.",
           licence: "ESAL-2.0",
-          repository_url: "https://git.gay/doughmination/restful",
+          repository_url: "https://github.com/doughmination/restful",
           main_endpoint: "/v1/users/:id",
           websocket: "/socket",
           healthcheck: "/status",
-          other_endpoints: ["/v1/users/:id/presence", "/v1/users/:id/profile"],
+          other_endpoints: ["/v1/users/:id/presence", "/v1/users/:id/profile", "/v1/guilds/:serverInvite"],
         },
         authors: {
-          doughmination: "https://git.gay/doughmination",
-        } as any,
-      });
+          doughmination: "https://codeberg.org/clove",
+        },
+      } as any);
+    }
+
+    // ---- /v1/guilds/:serverInvite ----
+    const gm = path.match(/^\/v1\/guilds\/([\w-]+)$/);
+    if (gm) {
+      const inviteCode = gm[1];
+      const force =
+        url.searchParams.has("fresh") ||
+        url.searchParams.has("nocache") ||
+        url.searchParams.has("refresh");
+
+      const invite = await getGuildInvite(env, inviteCode, ctx, force);
+      if (!invite) {
+        return json({ success: false, error: { code: "not_found", message: "Invalid or expired invite." } }, 404);
+      }
+      return json<UnifiedGuildInvite>({ success: true, data: invite });
     }
 
     // ---- /v1/users/:id[/presence|/profile] ----

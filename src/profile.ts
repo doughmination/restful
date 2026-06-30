@@ -251,7 +251,7 @@ async function getWishlistItems(
     .map(wishlistItemToCore)
     .filter((x: WishlistCore) => x.sku_id);
   const write = env.PROFILE_CACHE.put(wishlistKey(wishlistId), JSON.stringify(items), {
-    expirationTtl: 3600, // 1h — wishlists change occasionally
+    expirationTtl: 300,
   });
   if (ctx) ctx.waitUntil(write);
   else await write;
@@ -305,7 +305,7 @@ function cacheKey(id: string): string {
 /** Base profile freshness window (seconds). Profiles change rarely, so this is
  *  long by default; override via PROFILE_CACHE_TTL_SECONDS. */
 function baseTtl(env: Env): number {
-  return Math.max(60, Number(env.PROFILE_CACHE_TTL_SECONDS || "1800"));
+  return Math.max(60, Number(env.PROFILE_CACHE_TTL_SECONDS || "300"));
 }
 
 type CachedProfile = Omit<ProfileResult, "source">;

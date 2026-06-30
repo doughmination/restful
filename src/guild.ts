@@ -58,7 +58,7 @@ export async function getGuildInvite(
   };
 
   const write = env.PROFILE_CACHE.put(cacheKey(code), JSON.stringify(result), {
-    expirationTtl: 600,
+    expirationTtl: 300,
   });
   if (ctx) ctx.waitUntil(write);
   else await write;

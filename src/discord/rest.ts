@@ -158,7 +158,7 @@ export interface UserProfileFetch {
 
 /** Configured user tokens (1 or 2), in order, skipping blanks. */
 function userTokens(env: Env): string[] {
-  return [env.DISCORD_USER_TOKEN, env.DISCORD_USER_TOKEN2].filter(
+  return [env.DISCORD_USER_TOKEN, env.DISCORD_USER_TOKEN2, env.DISCORD_USER_TOKEN3].filter(
     (t): t is string => !!t && t.trim().length > 0
   );
 }

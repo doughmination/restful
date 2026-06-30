@@ -5,7 +5,6 @@
  * object carries live presence (gateway) + profile/badges (REST). Fields
  * that require the optional user token are null when running bot-only.
  * ===================================================================== */
-
 export interface Env {
   GATEWAY: DurableObjectNamespace;
   PROFILE_CACHE: KVNamespace;
@@ -16,12 +15,13 @@ export interface Env {
   /** Optional second self-bot token; rich fetches spread across both and fail
    *  over on a 429, doubling the /profile rate-limit headroom. */
   DISCORD_USER_TOKEN2?: string;
+  /** Optional third self-bot token — extra headroom / backup if the first
+   *  two are both cooling down from a 429. */
+  DISCORD_USER_TOKEN3?: string;
 
   DISCORD_API_VERSION?: string;
   TRACKED_GUILD_IDS?: string;
   PROFILE_CACHE_TTL_SECONDS?: string;
-  /** Current Discord client build number, sent in X-Super-Properties so the
-   *  user-token /profile requests get the client's gentler rate limits. */
   DISCORD_CLIENT_BUILD_NUMBER?: string;
 }
 

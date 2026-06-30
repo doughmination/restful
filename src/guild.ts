@@ -20,7 +20,7 @@ function bannerUrl(guildId: string, hash: string | null | undefined): string | n
 
 function splashUrl(guildId: string, hash: string | null | undefined): string | null {
   if (!hash) return null;
-  return `${CDN}/discovery-splashes/${guildId}/${hash}.png`;
+  return `${CDN}/splashes/${guildId}/${hash}.png`;
 }
 
 function cacheKey(code: string): string {

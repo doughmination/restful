@@ -23,6 +23,9 @@ export interface Env {
   TRACKED_GUILD_IDS?: string;
   PROFILE_CACHE_TTL_SECONDS?: string;
   DISCORD_CLIENT_BUILD_NUMBER?: string;
+
+  /** Guild id for the /v1/girls/:idType/:id lookups (e.g. your "Girls" server). */
+  GIRLS_GUILD_ID?: string;
 }
 
 export type DiscordStatus = "online" | "idle" | "dnd" | "offline";
@@ -224,6 +227,36 @@ export interface UnifiedRecord {
     presence: "gateway" | "none";
     profile: "bot" | "user" | "cache";
   };
+}
+
+/** A role from the configured "Girls" guild (/v1/girls/role/:id). */
+export interface UnifiedGirlsRole {
+  id: string;
+  guild_id: string;
+  name: string;
+  color: number;
+  colors: { primary_color: number; secondary_color: number | null; tertiary_color: number | null } | null;
+  hoist: boolean;
+  icon_url: string | null;
+  unicode_emoji: string | null;
+  position: number;
+  permissions: string;
+  managed: boolean;
+  mentionable: boolean;
+  member_count: number | null;
+}
+
+/** A member from the configured "Girls" guild (/v1/girls/member/:id). */
+export interface UnifiedGirlsMember {
+  user_id: string;
+  guild_id: string;
+  nick: string | null;
+  avatar_url: string | null;
+  roles: string[];
+  joined_at: string | null;
+  premium_since: string | null;
+  pending: boolean;
+  communication_disabled_until: string | null;
 }
 
 export interface ApiEnvelope<T> {

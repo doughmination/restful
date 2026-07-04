@@ -259,6 +259,51 @@ export async function fetchWishlist(env: Env, wishlistId: string): Promise<Wishl
 }
 
 
+// ---- guild roles / members (for /v1/girls/:idType/:id) -------------------
+
+export interface RawGuildRole {
+  id: string;
+  name: string;
+  color: number;
+  colors?: { primary_color: number; secondary_color: number | null; tertiary_color: number | null };
+  hoist: boolean;
+  icon?: string | null;
+  unicode_emoji?: string | null;
+  position: number;
+  permissions: string;
+  managed: boolean;
+  mentionable: boolean;
+}
+
+export interface RawGuildMember {
+  user?: RawDiscordUser;
+  nick?: string | null;
+  avatar?: string | null;
+  roles: string[];
+  joined_at: string;
+  premium_since?: string | null;
+  pending?: boolean;
+  communication_disabled_until?: string | null;
+}
+
+/** All roles for a guild. Bot token only — no privileged intent needed. */
+export async function fetchGuildRoles(env: Env, guildId: string): Promise<RawGuildRole[] | null> {
+  const res = await fetch(`${apiBase(env)}/guilds/${guildId}/roles`, {
+    headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as RawGuildRole[];
+}
+
+/** One guild member. Bot token only — no privileged intent needed. */
+export async function fetchGuildMember(env: Env, guildId: string, userId: string): Promise<RawGuildMember | null> {
+  const res = await fetch(`${apiBase(env)}/guilds/${guildId}/members/${userId}`, {
+    headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as RawGuildMember;
+}
+
 export interface RawInviteResponse {
   code: string;
   expires_at?: string | null;

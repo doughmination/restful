@@ -11,10 +11,11 @@
  * The Durable Object is a singleton ("gateway") holding the Discord socket.
  * ===================================================================== */
 
-import type { ApiEnvelope, Env, UnifiedPresence, UnifiedRecord, UnifiedGuildInvite } from "./types";
+import type { ApiEnvelope, Env, UnifiedPresence, UnifiedRecord, UnifiedGuildInvite, UnifiedGirlsRole, UnifiedGirlsMember } from "./types";
 import { getProfile } from "./profile";
 import { GatewayManager } from "./gateway";
 import { getGuildInvite } from "./guild";
+import { getGirlsResource, isGirlsIdType } from "./girls";
 
 export { GatewayManager };
 
@@ -74,7 +75,12 @@ export default {
           main_endpoint: "/v1/users/:id",
           websocket: "/socket",
           healthcheck: "/status",
-          other_endpoints: ["/v1/users/:id/presence", "/v1/users/:id/profile", "/v1/guilds/:serverInvite"],
+          other_endpoints: [
+            "/v1/users/:id/presence",
+            "/v1/users/:id/profile",
+            "/v1/guilds/:serverInvite",
+            "/v1/girls/:idType/:id (idType: role | member)",
+          ],
         },
         authors: {
           doughmination: "https://codeberg.org/clove",
@@ -96,6 +102,36 @@ export default {
         return json({ success: false, error: { code: "not_found", message: "Invalid or expired invite." } }, 404);
       }
       return json<UnifiedGuildInvite>({ success: true, data: invite });
+    }
+
+    // ---- /v1/girls/:idType/:id ----
+    const gr = path.match(/^\/v1\/girls\/([\w-]+)\/(\d{1,32})$/);
+    if (gr) {
+      const [, idType, id] = gr;
+      if (!isGirlsIdType(idType)) {
+        return json(
+          { success: false, error: { code: "invalid_id_type", message: "idType must be one of: role, member." } },
+          400
+        );
+      }
+
+      const force =
+        url.searchParams.has("fresh") ||
+        url.searchParams.has("nocache") ||
+        url.searchParams.has("refresh");
+
+      try {
+        const resource = await getGirlsResource(env, idType, id, ctx, force);
+        if (!resource) {
+          return json({ success: false, error: { code: "not_found", message: `No ${idType} with that id.` } }, 404);
+        }
+        return json<UnifiedGirlsRole | UnifiedGirlsMember>({ success: true, data: resource });
+      } catch (err) {
+        return json(
+          { success: false, error: { code: "misconfigured", message: (err as Error).message } },
+          500
+        );
+      }
     }
 
     // ---- /v1/users/:id[/presence|/profile] ----

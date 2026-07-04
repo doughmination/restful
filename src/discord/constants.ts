@@ -110,6 +110,11 @@ export function badgeIconUrl(hash: string): string {
   return `${CDN}/badge-icons/${hash}.png`;
 }
 
+export function roleIconUrl(roleId: string, hash: string | null | undefined): string | null {
+  if (!hash) return null;
+  return `${CDN}/role-icons/${roleId}/${hash}.png`;
+}
+
 export function clanBadgeUrl(guildId: string, badge: string): string {
   return `${CDN}/guild-tag-badges/${guildId}/${badge}.png?size=24`;
 }

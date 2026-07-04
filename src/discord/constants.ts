@@ -115,6 +115,11 @@ export function roleIconUrl(roleId: string, hash: string | null | undefined): st
   return `${CDN}/role-icons/${roleId}/${hash}.png`;
 }
 
+/** Discord role/embed colors are decimal ints — format as "#rrggbb". */
+export function colorToHex(color: number): string {
+  return `#${(color & 0xffffff).toString(16).padStart(6, "0")}`;
+}
+
 export function clanBadgeUrl(guildId: string, badge: string): string {
   return `${CDN}/guild-tag-badges/${guildId}/${badge}.png?size=24`;
 }

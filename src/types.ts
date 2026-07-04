@@ -235,7 +235,11 @@ export interface UnifiedGirlsRole {
   guild_id: string;
   name: string;
   color: number;
+  /** Same value as `color`, formatted as "#rrggbb" (lowercase). "#000000" means "no color set" (Discord's default). */
+  color_hex: string;
   colors: { primary_color: number; secondary_color: number | null; tertiary_color: number | null } | null;
+  /** Hex-formatted mirror of `colors` (null entries stay null). */
+  colors_hex: { primary_color: string; secondary_color: string | null; tertiary_color: string | null } | null;
   hoist: boolean;
   icon_url: string | null;
   unicode_emoji: string | null;

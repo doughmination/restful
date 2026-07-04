@@ -11,7 +11,7 @@
 
 import type { Env, UnifiedGirlsMember, UnifiedGirlsRole } from "./types";
 import { fetchGuildMember, fetchGuildRoles } from "./discord/rest";
-import { avatarUrl, roleIconUrl } from "./discord/constants";
+import { avatarUrl, colorToHex, roleIconUrl } from "./discord/constants";
 
 export const GIRLS_ID_TYPES = ["role", "member"] as const;
 export type GirlsIdType = (typeof GIRLS_ID_TYPES)[number];
@@ -70,11 +70,19 @@ async function getRole(env: Env, guildId: string, roleId: string): Promise<Unifi
     guild_id: guildId,
     name: role.name,
     color: role.color,
+    color_hex: colorToHex(role.color),
     colors: role.colors
       ? {
           primary_color: role.colors.primary_color,
           secondary_color: role.colors.secondary_color ?? null,
           tertiary_color: role.colors.tertiary_color ?? null,
+        }
+      : null,
+    colors_hex: role.colors
+      ? {
+          primary_color: colorToHex(role.colors.primary_color),
+          secondary_color: role.colors.secondary_color != null ? colorToHex(role.colors.secondary_color) : null,
+          tertiary_color: role.colors.tertiary_color != null ? colorToHex(role.colors.tertiary_color) : null,
         }
       : null,
     hoist: role.hoist,

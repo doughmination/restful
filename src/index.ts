@@ -3,6 +3,7 @@
  *
  * Routes
  *   GET  /                            service info
+ *   GET  /v1/users?ids=a,b,c          batch unified (up to 100 ids, one call)
  *   GET  /v1/users/:id                unified (presence + profile + badges)
  *   GET  /v1/users/:id/presence       presence only
  *   GET  /v1/users/:id/profile        profile + badges only
@@ -43,6 +44,31 @@ async function fetchPresence(env: Env, id: string): Promise<UnifiedPresence | nu
   return body.presence;
 }
 
+/** Every monitored presence in one Durable Object round-trip (used by the
+ *  batch endpoint so N users cost one DO call instead of N). */
+async function fetchAllPresences(env: Env): Promise<Record<string, UnifiedPresence>> {
+  const res = await gatewayStub(env).fetch("https://do/presences");
+  if (!res.ok) return {};
+  return (await res.json()) as Record<string, UnifiedPresence>;
+}
+
+/** Assemble the unified record shape shared by the single + batch routes. */
+function buildRecord(
+  profile: NonNullable<Awaited<ReturnType<typeof getProfile>>>,
+  presence: UnifiedPresence | null
+): UnifiedRecord {
+  return {
+    user: profile.user,
+    presence,
+    badges: profile.badges,
+    clientBadges: profile.clientBadges,
+    connected_accounts: profile.connected_accounts,
+    wishlist: profile.wishlist ?? null,
+    updated_at: Date.now(),
+    source: { presence: presence ? "gateway" : "none", profile: profile.source },
+  };
+}
+
 const ID_RE = /^\d{16,21}$/;
 
 export default {
@@ -76,6 +102,7 @@ export default {
           websocket: "/socket",
           healthcheck: "/status",
           other_endpoints: [
+            "/v1/users?ids=a,b,c (batch, up to 100)",
             "/v1/users/:id/presence",
             "/v1/users/:id/profile",
             "/v1/guilds/:serverInvite",
@@ -134,6 +161,43 @@ export default {
       }
     }
 
+    // ---- /v1/users?ids=a,b,c  (batch: many users in one round-trip) ----
+    if (path === "/v1/users") {
+      const ids = Array.from(
+        new Set((url.searchParams.get("ids") || "").split(",").map((s) => s.trim()).filter(Boolean))
+      );
+      if (!ids.length) {
+        return json({ success: false, error: { code: "missing_ids", message: "Provide ?ids=comma,separated,snowflakes." } }, 400);
+      }
+      if (ids.length > 100) {
+        return json({ success: false, error: { code: "too_many_ids", message: "Maximum 100 ids per request." } }, 400);
+      }
+      const bad = ids.find((id) => !ID_RE.test(id));
+      if (bad) {
+        return json({ success: false, error: { code: "invalid_id", message: `Not a Discord snowflake: ${bad}` } }, 400);
+      }
+
+      const force =
+        url.searchParams.has("fresh") ||
+        url.searchParams.has("nocache") ||
+        url.searchParams.has("refresh");
+
+      // One DO call for all presences; profiles fetched in parallel (each cached
+      // in KV). A user with no profile → null entry, mirroring the single route.
+      const [presences, profiles] = await Promise.all([
+        fetchAllPresences(env),
+        Promise.all(ids.map((id) => getProfile(env, id, ctx, force).catch(() => null))),
+      ]);
+
+      const data: Record<string, UnifiedRecord | null> = {};
+      ids.forEach((id, i) => {
+        const profile = profiles[i];
+        data[id] = profile ? buildRecord(profile, presences[id] ?? null) : null;
+      });
+
+      return json<Record<string, UnifiedRecord | null>>({ success: true, data });
+    }
+
     // ---- /v1/users/:id[/presence|/profile] ----
     const m = path.match(/^\/v1\/users\/(\d{1,32})(?:\/(presence|profile))?$/);
     if (m) {
@@ -171,17 +235,7 @@ export default {
       if (!profile) {
         return json({ success: false, error: { code: "not_found", message: "User not found." } }, 404);
       }
-      const record: UnifiedRecord = {
-        user: profile.user,
-        presence,
-        badges: profile.badges,
-        clientBadges: profile.clientBadges,
-        connected_accounts: profile.connected_accounts,
-        wishlist: profile.wishlist ?? null,
-        updated_at: Date.now(),
-        source: { presence: presence ? "gateway" : "none", profile: profile.source },
-      };
-      return json<UnifiedRecord>({ success: true, data: record });
+      return json<UnifiedRecord>({ success: true, data: buildRecord(profile, presence) });
     }
 
     return json({ success: false, error: { code: "not_found", message: "Unknown route." } }, 404);

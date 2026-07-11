@@ -39,6 +39,14 @@
 		"TRACKED_GUILD_IDS": "",
 		"PROFILE_CACHE_TTL_SECONDS": "1800",
 		"DISCORD_CLIENT_BUILD_NUMBER": "565311",
-		"GIRLS_GUILD_ID": "1498839518265213069"
+		"GIRLS_GUILD_ID": "1498839518265213069",
+		// Guilds to resolve per-user membership for (roles/join/boost/nick/avatar/
+		// timeout). Empty falls back to TRACKED_GUILD_IDS; empty there = skipped.
+		"MEMBERSHIP_GUILD_IDS": "",
+		// Third-party enrichment sources (all overridable if you self-host a fork).
+		"PRONOUNDB_API_BASE": "https://pronoundb.org",
+		"TIMEZONE_API_BASE": "https://timezone.creations.works",
+		"REVIEWDB_API_BASE": "https://manti.vendicated.dev/api/reviewdb",
+		"REVIEWDB_MAX": "25"
 	}
 }

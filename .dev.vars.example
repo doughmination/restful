@@ -15,3 +15,7 @@ DISCORD_USER_TOKEN=
 # tokens and fail over on a 429, doubling the /profile rate-limit headroom.
 # Same ToS warning applies — more accounts means more accounts at risk.
 DISCORD_USER_TOKEN2=
+
+# OPTIONAL third user token — extra headroom / backup if the first two are both
+# cooling down from a 429. Same ToS warning.
+DISCORD_USER_TOKEN3=

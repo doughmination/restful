@@ -11,6 +11,12 @@ import type {
   UnifiedBadge,
   UnifiedClientBadge,
   UnifiedConnectedAccount,
+  UnifiedGuildMembership,
+  UnifiedMutualFriend,
+  UnifiedMutualGuild,
+  UnifiedPremium,
+  UnifiedReviews,
+  UnifiedTimezone,
   UnifiedUser,
   UnifiedWishlistItem,
 } from "./types";
@@ -26,15 +32,25 @@ import {
   decodeUserFlags,
   decorationUrl,
   FLAG_BADGES,
+  guildIconUrl,
   nameplateStaticUrl,
   nameplateVideoUrl,
+  premiumTypeName,
 } from "./discord/constants";
 import {
   fetchBotUser,
+  fetchGuildBasic,
   fetchUserProfile,
   fetchWishlist,
   type RawDiscordUser,
+  type RawMutualFriend,
+  type RawMutualGuild,
+  type RawProfileResponse,
 } from "./discord/rest";
+import { getMemberships } from "./memberships";
+import { getPronouns } from "./thirdparty/pronoundb";
+import { getTimezone } from "./thirdparty/timezone";
+import { getReviews } from "./thirdparty/reviewdb";
 
 export interface ProfileResult {
   user: UnifiedUser;
@@ -44,6 +60,19 @@ export interface ProfileResult {
   connected_accounts: UnifiedConnectedAccount[];
   /** Shop collectibles saved to the profile; null when unavailable. */
   wishlist: UnifiedWishlistItem[] | null;
+  /** Guilds shared with the userbot account (rich profile). */
+  mutual_guilds: UnifiedMutualGuild[] | null;
+  /** Friends shared with the userbot account (rich profile). */
+  mutual_friends: UnifiedMutualFriend[] | null;
+  mutual_friends_count: number | null;
+  /** Per-guild membership across configured tracked guilds (bot token). */
+  guild_memberships: UnifiedGuildMembership[] | null;
+  /** Pronouns from PronounDB. */
+  pronoundb: string | null;
+  /** Timezone from the client-mod Timezones backend. */
+  timezone: UnifiedTimezone | null;
+  /** ReviewDB reviews/reputation. */
+  reviews: UnifiedReviews | null;
   source: "bot" | "user" | "cache";
 }
 
@@ -68,7 +97,9 @@ function buildUser(
   u: RawDiscordUser,
   bio: string | null,
   pronouns: string | null,
-  themeColors: number[] | null
+  themeColors: number[] | null,
+  premium: UnifiedPremium | null = null,
+  profileEffectId: string | null = null
 ): UnifiedUser {
   const pg = u.primary_guild;
   const clan =
@@ -89,6 +120,7 @@ function buildUser(
     username: u.username,
     global_name: u.global_name ?? null,
     display_name: u.display_name ?? u.global_name ?? null,
+    legacy_username: u.legacy_username ?? null,
     avatar: u.avatar ?? null,
     avatar_url: avatarUrl(u.id, u.avatar),
     banner: u.banner ?? null,
@@ -113,7 +145,76 @@ function buildUser(
           effect_id: u.display_name_styles.effect_id ?? null,
         }
       : null,
+    premium,
+    profile_effect_id: profileEffectId,
   };
+}
+
+/** Build the premium/boosting block from the rich profile's premium fields. */
+function buildPremium(profile: RawProfileResponse): UnifiedPremium | null {
+  const hasAny =
+    profile.premium_type != null ||
+    profile.premium_since != null ||
+    profile.premium_guild_since != null;
+  if (!hasAny) return null;
+  return {
+    type_id: profile.premium_type ?? null,
+    type: premiumTypeName(profile.premium_type),
+    since: profile.premium_since ?? null,
+    guild_since: profile.premium_guild_since ?? null,
+  };
+}
+
+/** Resolve mutual guilds (needs a per-guild name/icon lookup, cached). */
+async function buildMutualGuilds(
+  env: Env,
+  raw: RawMutualGuild[] | null | undefined,
+  ctx?: ExecutionContext
+): Promise<UnifiedMutualGuild[] | null> {
+  if (!Array.isArray(raw)) return null;
+  const out: UnifiedMutualGuild[] = [];
+  for (const g of raw) {
+    if (!g || !g.id) continue;
+    // Reuse the membership guildmeta cache shape by fetching basic guild info.
+    let name: string | null = null;
+    let icon_url: string | null = null;
+    const key = `guildmeta:${g.id}`;
+    const cached = (await env.PROFILE_CACHE.get(key, "json")) as
+      | { name: string | null; icon_url: string | null }
+      | null;
+    if (cached) {
+      name = cached.name;
+      icon_url = cached.icon_url;
+    } else {
+      const info = await fetchGuildBasic(env, g.id);
+      if (info) {
+        name = info.name;
+        icon_url = guildIconUrl(g.id, info.icon);
+        const write = env.PROFILE_CACHE.put(
+          key,
+          JSON.stringify({ name, icon_url }),
+          { expirationTtl: 21600 }
+        );
+        if (ctx) ctx.waitUntil(write);
+        else await write;
+      }
+    }
+    out.push({ id: g.id, nick: g.nick ?? null, name, icon_url });
+  }
+  return out;
+}
+
+/** Map mutual friends to the unified shape. */
+function buildMutualFriends(raw: RawMutualFriend[] | null | undefined): UnifiedMutualFriend[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw
+    .filter((f) => f && f.id)
+    .map((f) => ({
+      id: f.id,
+      username: f.username,
+      global_name: f.global_name ?? null,
+      avatar_url: avatarUrl(f.id, f.avatar ?? null),
+    }));
 }
 
 // ---- wishlist (profile's wishlist_settings key is a WISHLIST id) ---------
@@ -392,18 +493,28 @@ function mergeRichOverBot(cached: CachedProfile, bot: ProfileResult): CachedProf
     user: {
       ...bot.user,
       bio: cached.user.bio,
-      pronouns: cached.user.pronouns,
+      pronouns: cached.user.pronouns ?? bot.user.pronouns,
       theme_colors: cached.user.theme_colors,
       display_name_styles: cached.user.display_name_styles,
+      premium: cached.user.premium,
+      profile_effect_id: cached.user.profile_effect_id,
     },
     badges: cached.badges.length ? cached.badges : bot.badges,
     clientBadges: bot.clientBadges != null ? bot.clientBadges : cached.clientBadges,
     connected_accounts: cached.connected_accounts.length
       ? cached.connected_accounts
       : bot.connected_accounts,
-    // Bot-only refreshes can't read the wishlist (it rides on the rich
-    // profile), so keep the cached one rather than dropping it to null.
+    // Bot-only refreshes can't read the wishlist / mutuals (they ride on the
+    // rich profile), so keep the cached ones rather than dropping to null.
     wishlist: bot.wishlist != null ? bot.wishlist : cached.wishlist,
+    mutual_guilds: cached.mutual_guilds,
+    mutual_friends: cached.mutual_friends,
+    mutual_friends_count: cached.mutual_friends_count,
+    // These don't need the user token, so a fresh bot refresh has current data.
+    guild_memberships: bot.guild_memberships ?? cached.guild_memberships,
+    pronoundb: bot.pronoundb ?? cached.pronoundb,
+    timezone: bot.timezone ?? cached.timezone,
+    reviews: bot.reviews ?? cached.reviews,
   };
 }
 
@@ -419,6 +530,13 @@ async function writeCache(env: Env, id: string, result: ProfileResult): Promise<
       clientBadges: result.clientBadges,
       connected_accounts: result.connected_accounts,
       wishlist: result.wishlist,
+      mutual_guilds: result.mutual_guilds,
+      mutual_friends: result.mutual_friends,
+      mutual_friends_count: result.mutual_friends_count,
+      guild_memberships: result.guild_memberships,
+      pronoundb: result.pronoundb,
+      timezone: result.timezone,
+      reviews: result.reviews,
     }),
     // Keep the rich blob ~24h so it's available to merge over bot data even
     // when it's well past its freshness window.
@@ -452,7 +570,11 @@ async function buildFreshProfile(
   if (profile && profile.user) {
     const u = profile.user;
     const bio = profile.user_profile?.bio ?? u.bio ?? null;
-    const pronouns = profile.user_profile?.pronouns ?? null;
+    // Discord's OWN pronouns (the native, lesser-known profile feature). Discord
+    // returns "" — not null — when unset, so normalise empty to null; that's
+    // what lets the PronounDB fallback actually kick in below.
+    const rawPronouns = profile.user_profile?.pronouns;
+    const pronouns = typeof rawPronouns === "string" && rawPronouns.trim() ? rawPronouns : null;
     const themeColors =
       Array.isArray(profile.user_profile?.theme_colors) &&
       profile.user_profile!.theme_colors!.length >= 2
@@ -484,18 +606,40 @@ async function buildFreshProfile(
       verified: !!c.verified,
     }));
 
-    // Wishlist rides on the rich profile (`wishlist_settings`); resolve its
-    // SKUs to names + images (cache-first). null if the field is absent.
-    const wishlist = await buildWishlist(env, profile, ctx, force);
-    const clientBadges = await getClientBadges(env, id, ctx, force);
+    const premium = buildPremium(profile);
+    const profileEffectId = profile.user_profile?.profile_effect?.id ?? null;
+
+    // Fetch everything that doesn't depend on the profile body in parallel.
+    // Wishlist + mutual guilds need the profile, so they run alongside.
+    const [wishlist, clientBadges, mutualGuilds, memberships, pronoundb, timezone, reviews] =
+      await Promise.all([
+        buildWishlist(env, profile, ctx, force),
+        getClientBadges(env, id, ctx, force),
+        buildMutualGuilds(env, profile.mutual_guilds, ctx),
+        getMemberships(env, id, ctx, force).catch(() => null),
+        getPronouns(env, id, ctx, force).catch(() => null),
+        getTimezone(env, id, ctx, force).catch(() => null),
+        getReviews(env, id, ctx, force).catch(() => null),
+      ]);
 
     return {
       result: {
-        user: buildUser(u, bio, pronouns, themeColors),
+        // Prefer PronounDB pronouns when Discord's own profile has none.
+        user: buildUser(u, bio, pronouns ?? pronoundb, themeColors, premium, profileEffectId),
         badges,
         clientBadges,
         connected_accounts: connected,
         wishlist,
+        mutual_guilds: mutualGuilds,
+        mutual_friends: buildMutualFriends(profile.mutual_friends),
+        mutual_friends_count:
+          typeof profile.mutual_friends_count === "number"
+            ? profile.mutual_friends_count
+            : buildMutualFriends(profile.mutual_friends)?.length ?? null,
+        guild_memberships: memberships,
+        pronoundb,
+        timezone,
+        reviews,
         source: "user",
       },
       richStatus,
@@ -503,18 +647,33 @@ async function buildFreshProfile(
     };
   }
 
-  // Bot-only fallback — the wishlist rides on the rich profile, which we don't
-  // have here, so it's null and the cache-merge keeps any previously cached one.
+  // Bot-only fallback — the wishlist + mutuals ride on the rich profile, which
+  // we don't have here, so they're null and the cache-merge keeps any
+  // previously cached ones. Third-party sources + memberships don't need the
+  // user token, so we still fetch those.
   const u = await fetchBotUser(env, id);
   if (!u) return { result: null, richStatus, retryAfter };
-  const clientBadges = await getClientBadges(env, id, ctx, force);
+  const [clientBadges, memberships, pronoundb, timezone, reviews] = await Promise.all([
+    getClientBadges(env, id, ctx, force),
+    getMemberships(env, id, ctx, force).catch(() => null),
+    getPronouns(env, id, ctx, force).catch(() => null),
+    getTimezone(env, id, ctx, force).catch(() => null),
+    getReviews(env, id, ctx, force).catch(() => null),
+  ]);
   return {
     result: {
-      user: buildUser(u, null, null, null),
+      user: buildUser(u, null, pronoundb, null),
       badges: flagBadges(u.public_flags ?? u.flags ?? 0),
       clientBadges,
       connected_accounts: [],
       wishlist: null,
+      mutual_guilds: null,
+      mutual_friends: null,
+      mutual_friends_count: null,
+      guild_memberships: memberships,
+      pronoundb,
+      timezone,
+      reviews,
       source: "bot",
     },
     richStatus,

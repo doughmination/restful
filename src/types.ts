@@ -26,6 +26,22 @@ export interface Env {
 
   /** Guild id for the /v1/girls/:idType/:id lookups (e.g. your "Girls" server). */
   GIRLS_GUILD_ID?: string;
+
+  /** Comma-separated guild ids to resolve per-guild membership data for on
+   *  every profile (roles, join date, boosting, guild nick/avatar, timeout).
+   *  Empty/unset falls back to TRACKED_GUILD_IDS; if that's empty too,
+   *  memberships are skipped (they cost one bot call per guild). */
+  MEMBERSHIP_GUILD_IDS?: string;
+
+  /** Base URL for the PronounDB lookup API. Default https://pronoundb.org. */
+  PRONOUNDB_API_BASE?: string;
+  /** Base URL for the Vencord/Equicord Timezones plugin backend.
+   *  Default https://timezone.creations.works. */
+  TIMEZONE_API_BASE?: string;
+  /** Base URL for the ReviewDB API. Default https://manti.vendicated.dev/api/reviewdb. */
+  REVIEWDB_API_BASE?: string;
+  /** Max ReviewDB reviews to include per user (default 25). */
+  REVIEWDB_MAX?: string;
 }
 
 export type DiscordStatus = "online" | "idle" | "dnd" | "offline";
@@ -81,6 +97,9 @@ export interface UnifiedClientBadge {
   tooltip: string;
   /** Absolute URL to the badge icon (png/gif/webp/svg). */
   icon_url: string;
+  /** Which client-mod service the badge came from, inferred from the icon host
+   *  (e.g. "Vencord", "Equicord", "BadgeVault"). "Equicord" for unknowns. */
+  source: string;
 }
 
 export interface UnifiedConnectedAccount {
@@ -143,11 +162,25 @@ export interface UnifiedWishlistItem {
   updated_at: string | null;
 }
 
+/** Nitro / premium subscription state, decoded from the rich profile. */
+export interface UnifiedPremium {
+  /** Raw Discord premium_type (0 none, 1 classic, 2 nitro, 3 basic). */
+  type_id: number | null;
+  /** Human-readable tier: "none" | "classic" | "nitro" | "basic" | "unknown". */
+  type: "none" | "classic" | "nitro" | "basic" | "unknown";
+  /** ISO timestamp the user first subscribed to Nitro; null if unknown/none. */
+  since: string | null;
+  /** ISO timestamp the user started boosting any server; null if not boosting. */
+  guild_since: string | null;
+}
+
 export interface UnifiedUser {
   id: string;
   username: string;
   global_name: string | null;
   display_name: string | null;
+  /** Pre-2023 "name#1234" handle when Discord still exposes it; null otherwise. */
+  legacy_username: string | null;
 
   avatar: string | null;
   avatar_url: string;
@@ -172,6 +205,10 @@ export interface UnifiedUser {
   theme_colors: number[] | null;
   /** Nitro display-name styling — gradient colours + font/effect ids. */
   display_name_styles: UnifiedDisplayNameStyles | null;
+  /** Nitro/premium subscription state (tier + since dates). Rich profile only. */
+  premium: UnifiedPremium | null;
+  /** Equipped profile effect (Shop collectible) id; null if none. */
+  profile_effect_id: string | null;
 }
 
 export interface UnifiedDisplayNameStyles {
@@ -200,12 +237,86 @@ export interface UnifiedPresence {
   status: DiscordStatus;
   online: boolean;
   platform: { desktop: boolean; mobile: boolean; web: boolean };
+  /** Per-platform status string (e.g. { desktop: "dnd", mobile: "online" });
+   *  richer than the booleans above — tells you the status on each client. */
+  client_status: { desktop: DiscordStatus | null; mobile: DiscordStatus | null; web: DiscordStatus | null };
+  /** Convenience list of the platforms the user is currently connected on. */
+  active_platforms: Array<"desktop" | "mobile" | "web">;
+  /** True when any activity is a Streaming (type 1) activity. */
+  streaming: boolean;
+  /** The Streaming activity's URL (Twitch/YouTube) when streaming; null otherwise. */
+  stream_url: string | null;
   /** Plain Discord activities array (custom status / type-4 stripped out). */
   activities: any[];
   custom_status: UnifiedCustomStatus | null;
   listening_to_spotify: boolean;
   spotify: UnifiedSpotify | null;
   updated_at: number;
+}
+
+/** A guild shared between the looked-up user and the userbot account. */
+export interface UnifiedMutualGuild {
+  id: string;
+  /** The user's nickname in that guild, when Discord returns one. */
+  nick: string | null;
+  name: string | null;
+  icon_url: string | null;
+}
+
+/** A friend shared between the looked-up user and the userbot account. */
+export interface UnifiedMutualFriend {
+  id: string;
+  username: string;
+  global_name: string | null;
+  avatar_url: string;
+}
+
+/** Per-guild membership for a user in one tracked guild (bot-token data). */
+export interface UnifiedGuildMembership {
+  guild_id: string;
+  guild_name: string | null;
+  guild_icon_url: string | null;
+  nick: string | null;
+  /** Guild-specific avatar if set, else falls back to the global avatar. */
+  avatar_url: string;
+  roles: string[];
+  joined_at: string | null;
+  /** ISO timestamp the user started boosting this guild; null if not boosting. */
+  premium_since: string | null;
+  pending: boolean;
+  /** ISO timestamp until which the user is timed out; null if not timed out. */
+  communication_disabled_until: string | null;
+}
+
+/** A user's timezone, from the Vencord/Equicord Timezones plugin backend. */
+export interface UnifiedTimezone {
+  /** IANA timezone id, e.g. "Europe/London". */
+  timezone: string;
+  /** Current local time in that zone (ISO 8601 with offset), computed at read. */
+  local_time: string | null;
+  /** UTC offset in minutes at read time (e.g. 60 for BST); null if uncomputable. */
+  utc_offset_minutes: number | null;
+}
+
+/** One ReviewDB review left on a user's profile. */
+export interface UnifiedReview {
+  id: number | null;
+  /** Free-text review body. */
+  comment: string;
+  /** Snowflake of the reviewer (Discord id), when present. */
+  sender_id: string | null;
+  sender_username: string | null;
+  sender_avatar_url: string | null;
+  /** Badge/type tags ReviewDB attaches (e.g. system/warning reviews). */
+  type: number | null;
+  /** ISO timestamp when known. */
+  timestamp: string | null;
+}
+
+/** ReviewDB reputation summary for a user. */
+export interface UnifiedReviews {
+  count: number;
+  reviews: UnifiedReview[];
 }
 
 export interface UnifiedRecord {
@@ -222,6 +333,22 @@ export interface UnifiedRecord {
    *  null when unavailable (no user token / proxy, or the source was blocked);
    *  [] means we reached the source and the wishlist is empty. */
   wishlist: UnifiedWishlistItem[] | null;
+  /** Guilds shared with the userbot account (rich profile, with_mutual_guilds).
+   *  null when unavailable; [] when none. */
+  mutual_guilds: UnifiedMutualGuild[] | null;
+  /** Friends shared with the userbot account. null unavailable; [] none. */
+  mutual_friends: UnifiedMutualFriend[] | null;
+  /** Count of mutual friends as Discord reports it (may exceed the list length). */
+  mutual_friends_count: number | null;
+  /** Per-guild membership across configured tracked guilds. null when not
+   *  configured/unavailable; [] when the user is in none of them. */
+  guild_memberships: UnifiedGuildMembership[] | null;
+  /** Pronouns from PronounDB (separate from Discord's own profile pronouns). */
+  pronoundb: string | null;
+  /** Timezone from the client-mod Timezones plugin backend; null if unset. */
+  timezone: UnifiedTimezone | null;
+  /** ReviewDB reputation/reviews; null when unavailable. */
+  reviews: UnifiedReviews | null;
   updated_at: number;
   source: {
     presence: "gateway" | "none";

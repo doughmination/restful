@@ -74,12 +74,32 @@ function enrichActivityAssets(a: any): any {
   };
 }
 
+/** Coerce a raw client_status value into a DiscordStatus or null. */
+function asStatus(v: string | undefined): DiscordStatus | null {
+  return v === "online" || v === "idle" || v === "dnd" || v === "offline" ? v : null;
+}
+
+/** The Streaming (type 1) activity, when present. */
+function extractStreaming(activities: any[]): { streaming: boolean; url: string | null } {
+  const s = activities.find((x) => x && x.type === 1);
+  if (!s) return { streaming: false, url: null };
+  return { streaming: true, url: typeof s.url === "string" ? s.url : null };
+}
+
 export function buildPresence(raw: RawPresence): UnifiedPresence {
   const rawActivities = Array.isArray(raw.activities) ? raw.activities : [];
   const activities = rawActivities.map(enrichActivityAssets);
   const status: DiscordStatus = raw.status ?? "offline";
   const cs = raw.client_status || {};
   const spotify = extractSpotify(activities);
+  const stream = extractStreaming(activities);
+
+  const client_status = {
+    desktop: asStatus(cs.desktop),
+    mobile: asStatus(cs.mobile),
+    web: asStatus(cs.web),
+  };
+  const active_platforms = (["desktop", "mobile", "web"] as const).filter((p) => !!cs[p]);
 
   return {
     user_id: raw.user.id,
@@ -90,6 +110,10 @@ export function buildPresence(raw: RawPresence): UnifiedPresence {
       mobile: !!cs.mobile,
       web: !!cs.web,
     },
+    client_status,
+    active_platforms: [...active_platforms],
+    streaming: stream.streaming,
+    stream_url: stream.url,
     activities,
     custom_status: extractCustomStatus(activities),
     listening_to_spotify: !!spotify,
@@ -105,6 +129,10 @@ export function offlinePresence(userId: string): UnifiedPresence {
     status: "offline",
     online: false,
     platform: { desktop: false, mobile: false, web: false },
+    client_status: { desktop: null, mobile: null, web: null },
+    active_platforms: [],
+    streaming: false,
+    stream_url: null,
     activities: [],
     custom_status: null,
     listening_to_spotify: false,

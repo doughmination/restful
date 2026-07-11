@@ -107,11 +107,27 @@ export interface RawDiscordUser {
   } | null;
   collectibles?: Record<string, unknown> | null;
   discriminator?: string;
+  /** Pre-2023 handle Discord still exposes on some rich profiles. */
+  legacy_username?: string | null;
   display_name_styles?: {
     colors?: number[] | null;
     font_id?: number | null;
     effect_id?: number | null;
   } | null;
+}
+
+/** A guild entry from the rich profile's `mutual_guilds` array. */
+export interface RawMutualGuild {
+  id: string;
+  nick?: string | null;
+}
+
+/** A friend entry from the rich profile's `mutual_friends` array. */
+export interface RawMutualFriend {
+  id: string;
+  username: string;
+  global_name?: string | null;
+  avatar?: string | null;
 }
 
 export interface RawProfileBadge {
@@ -128,12 +144,20 @@ export interface RawProfileResponse {
     pronouns?: string;
     accent_color?: number | null;
     theme_colors?: number[] | null;
+    /** Equipped profile effect (Shop collectible). */
+    profile_effect?: { id?: string | null } | null;
   };
   badges?: RawProfileBadge[];
   connected_accounts?: Array<{ type: string; id: string; name: string; verified: boolean }>;
   premium_type?: number;
   premium_since?: string | null;
   premium_guild_since?: string | null;
+  legacy_username?: string | null;
+  /** Guilds shared with the token account (with_mutual_guilds=true). */
+  mutual_guilds?: RawMutualGuild[] | null;
+  /** Friends shared with the token account (with_mutual_friends=true). */
+  mutual_friends?: RawMutualFriend[] | null;
+  mutual_friends_count?: number | null;
   /** Profile wishlist: map of WISHLIST id -> per-wishlist settings. The items
    *  themselves are NOT here — fetch them with fetchWishlist(wishlistId). */
   wishlist_settings?: Record<string, { visibility?: number; updated_at?: string }>;
@@ -173,9 +197,11 @@ export async function fetchUserProfile(env: Env, id: string): Promise<UserProfil
   const tokens = userTokens(env);
   if (tokens.length === 0) return { data: null, status: 0, retryAfter: 0 };
 
+  // Pull mutuals too — they ride on the same request, so it's free extra data.
+  // (Only mutuals with the userbot account are visible, by Discord's design.)
   const url =
     `${apiBase(env)}/users/${id}/profile` +
-    `?with_mutual_guilds=false&with_mutual_friends=false`;
+    `?with_mutual_guilds=true&with_mutual_friends=true`;
 
   // Spread load: start on a random token, then rotate to the next on a 429.
   const start = Math.floor(Math.random() * tokens.length);
@@ -302,6 +328,21 @@ export async function fetchGuildMember(env: Env, guildId: string, userId: string
   });
   if (!res.ok) return null;
   return (await res.json()) as RawGuildMember;
+}
+
+export interface RawGuildBasic {
+  id: string;
+  name: string;
+  icon: string | null;
+}
+
+/** Minimal guild info (name + icon) via bot token; cache-friendly. null on fail. */
+export async function fetchGuildBasic(env: Env, guildId: string): Promise<RawGuildBasic | null> {
+  const res = await fetch(`${apiBase(env)}/guilds/${guildId}`, {
+    headers: { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
+  });
+  if (!res.ok) return null;
+  return (await res.json()) as RawGuildBasic;
 }
 
 export interface RawInviteResponse {

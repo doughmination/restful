@@ -107,6 +107,7 @@ async function fetchClientBadges(id: string): Promise<UnifiedClientBadge[] | und
         id: badgeId(tooltip, b.badge),
         tooltip,
         icon_url: b.badge,
+        source: sourceForIconUrl(b.badge),
       };
     });
 }
@@ -124,9 +125,22 @@ async function fetchClientBadges(id: string): Promise<UnifiedClientBadge[] | und
  */
 const SOURCE_BY_HOST: Record<string, string> = {
   "gb.obamabot.me": "BadgeVault",
-  "nekocord.dev": "Neokcord",
+  "nekocord.dev": "Nekocord",
   "badges.vencord.dev": "Vencord",
   "badges.equicord.org": "Equicord",
+  "cdn.nest.rip": "Nekocord",
+  "reviewdb.mant.gg": "ReviewDB",
+  "manti.vendicated.dev": "ReviewDB",
+  "aliucord.com": "Aliucord",
+  "cdn.aliucord.com": "Aliucord",
+  "enmity.app": "Enmity",
+  "files.enmity.app": "Enmity",
+  "replugged.dev": "Replugged",
+  "cdn.replugged.dev": "Replugged",
+  "clientmodbadges.raincord.org": "Raincord",
+  "velocity.gg": "Velocity",
+  "paincord.xyz": "Paicord",
+  "i.imgur.com": "GlobalBadges",
 };
 
 /** Falls back to "Equicord" for unknown/malformed hosts. */

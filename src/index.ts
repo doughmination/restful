@@ -64,6 +64,13 @@ function buildRecord(
     clientBadges: profile.clientBadges,
     connected_accounts: profile.connected_accounts,
     wishlist: profile.wishlist ?? null,
+    mutual_guilds: profile.mutual_guilds ?? null,
+    mutual_friends: profile.mutual_friends ?? null,
+    mutual_friends_count: profile.mutual_friends_count ?? null,
+    guild_memberships: profile.guild_memberships ?? null,
+    pronoundb: profile.pronoundb ?? null,
+    timezone: profile.timezone ?? null,
+    reviews: profile.reviews ?? null,
     updated_at: Date.now(),
     source: { presence: presence ? "gateway" : "none", profile: profile.source },
   };

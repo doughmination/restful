@@ -124,6 +124,36 @@ export function clanBadgeUrl(guildId: string, badge: string): string {
   return `${CDN}/guild-tag-badges/${guildId}/${badge}.png?size=24`;
 }
 
+export function guildIconUrl(guildId: string, hash: string | null | undefined, size = 96): string | null {
+  if (!hash) return null;
+  const ext = isAnimated(hash) ? "gif" : "png";
+  return `${CDN}/icons/${guildId}/${hash}.${ext}?size=${size}`;
+}
+
+/** Guild-specific member avatar (falls back handled by the caller). */
+export function guildMemberAvatarUrl(guildId: string, userId: string, hash: string, size = 256): string {
+  const ext = isAnimated(hash) ? "gif" : "png";
+  return `${CDN}/guilds/${guildId}/users/${userId}/avatars/${hash}.${ext}?size=${size}`;
+}
+
+/** Map Discord's numeric premium_type to a human-readable Nitro tier. */
+export function premiumTypeName(
+  type: number | null | undefined
+): "none" | "classic" | "nitro" | "basic" | "unknown" {
+  switch (type) {
+    case 0:
+      return "none";
+    case 1:
+      return "classic";
+    case 2:
+      return "nitro";
+    case 3:
+      return "basic";
+    default:
+      return type == null ? "none" : "unknown";
+  }
+}
+
 export function emojiUrl(id: string, animated: boolean): string {
   return `${CDN}/emojis/${id}.${animated ? "gif" : "png"}?size=32`;
 }

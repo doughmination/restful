@@ -12,7 +12,7 @@ export const DOCS_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Doughmination Restful — API reference</title>
+<title>Doughmination API reference</title>
 <style>
   :root {
     color-scheme: dark;
@@ -51,9 +51,9 @@ export const DOCS_HTML = `<!doctype html>
 
     --get: var(--green); --post: var(--yellow); --put: var(--blue); --del: var(--red); --ws: var(--mauve);
   }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; min-width: 0; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; font: 15px/1.6 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  body { margin: 0; font: 15px/1.6 system-ui, sans-serif; background: var(--bg); color: var(--fg); overflow-x: hidden; }
 
   header {
     padding: 24px 20px 14px; border-bottom: 1px solid var(--line);
@@ -63,9 +63,9 @@ export const DOCS_HTML = `<!doctype html>
   h1 { margin: 0 0 4px; font-size: 21px; color: var(--fg); }
   h1 .accent-dot { color: var(--accent); }
   header p { margin: 0; color: var(--subtext0); font-size: 13.5px; }
-  header code { color: var(--pink); background: var(--surface0); border: 1px solid var(--line); }
+  header code { color: var(--pink); background: var(--surface0); border: 1px solid var(--line); word-break: break-all; }
 
-  .wrap { display: grid; grid-template-columns: 210px 1fr; gap: 24px; max-width: 1120px; margin: 0 auto; padding: 20px; }
+  .wrap { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 20px; max-width: 980px; margin: 0 auto; padding: 20px; }
 
   nav {
     position: sticky; top: 108px; align-self: start; font-size: 14px;
@@ -119,10 +119,10 @@ export const DOCS_HTML = `<!doctype html>
 
   .desc { margin: 9px 0 0; color: var(--subtext1); font-size: 14px; }
 
-  .params { margin: 10px 0 0; border-collapse: collapse; width: 100%; font-size: 13px; }
-  .params td { padding: 4px 10px 4px 0; vertical-align: top; border-top: 1px solid var(--surface1); }
+  .params { margin: 10px 0 0; border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 13px; }
+  .params td { padding: 4px 10px 4px 0; vertical-align: top; border-top: 1px solid var(--surface1); word-break: break-word; }
   .params tr:first-child td { border-top: none; }
-  .params td:first-child { font: 600 12px var(--mono); color: var(--pink); white-space: nowrap; }
+  .params td:first-child { width: 30%; font: 600 12px var(--mono); color: var(--pink); }
 
   .note { margin: 9px 0 0; font-size: 13px; color: var(--muted); }
 

@@ -15,57 +15,163 @@ export const DOCS_HTML = `<!doctype html>
 <title>Doughmination Restful — API reference</title>
 <style>
   :root {
-    color-scheme: dark light;
-    --bg: #0e0f12; --panel: #16181e; --panel2: #1a1c22; --line: #272a32;
-    --fg: #e6e7eb; --muted: #9aa0ac; --accent: #7aa2ff; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-    --get: #6ee787; --post: #f0c674; --put: #7aa2ff; --del: #ff6b6b;
+    color-scheme: dark;
+
+    /* Catppuccin Mocha */
+    --base: #1e1e2e;
+    --mantle: #181825;
+    --crust: #11111b;
+    --surface0: #313244;
+    --surface1: #45475a;
+    --surface2: #585b70;
+    --overlay0: #6c7086;
+    --overlay1: #7f849c;
+    --overlay2: #9399b2;
+    --subtext0: #a6adc8;
+    --subtext1: #bac2de;
+    --text: #cdd6f4;
+    --pink: #f5c2e7;
+    --mauve: #cba6f7;
+    --red: #f38ba8;
+    --peach: #fab387;
+    --yellow: #f9e2af;
+    --green: #a6e3a1;
+    --sky: #89dceb;
+    --blue: #89b4fa;
+
+    /* App aliases */
+    --bg: var(--base);
+    --panel: var(--surface0);
+    --panel2: var(--surface1);
+    --line: var(--surface2);
+    --fg: var(--text);
+    --muted: var(--subtext0);
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --accent: var(--pink);
+
+    --get: var(--green); --post: var(--yellow); --put: var(--blue); --del: var(--red); --ws: var(--mauve);
   }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.55 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
-  header { padding: 28px 20px 16px; border-bottom: 1px solid var(--line);
-           position: sticky; top: 0; background: linear-gradient(var(--bg), rgba(14,15,18,.92)); backdrop-filter: blur(6px); z-index: 5; }
-  h1 { margin: 0 0 4px; font-size: 22px; }
-  header p { margin: 0; color: var(--muted); font-size: 14px; }
-  .wrap { display: grid; grid-template-columns: 220px 1fr; gap: 24px; max-width: 1100px; margin: 0 auto; padding: 20px; }
-  nav { position: sticky; top: 120px; align-self: start; font-size: 14px; max-height: calc(100vh - 140px); overflow: auto; }
-  nav a { display: block; color: var(--muted); text-decoration: none; padding: 4px 8px; border-radius: 6px; }
-  nav a:hover { color: var(--fg); background: var(--panel2); }
-  #filter { width: 100%; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line);
-            background: var(--panel2); color: var(--fg); font: inherit; margin-bottom: 12px; }
-  section { margin-bottom: 34px; scroll-margin-top: 130px; }
-  section > h2 { font-size: 17px; margin: 0 0 2px; }
-  section > .blurb { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
-  .ep { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font: 15px/1.6 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+
+  header {
+    padding: 24px 20px 14px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: linear-gradient(var(--bg), rgba(30,30,46,.94));
+    backdrop-filter: blur(6px); z-index: 5;
+  }
+  h1 { margin: 0 0 4px; font-size: 21px; color: var(--fg); }
+  h1 .accent-dot { color: var(--accent); }
+  header p { margin: 0; color: var(--subtext0); font-size: 13.5px; }
+  header code { color: var(--pink); background: var(--surface0); border: 1px solid var(--line); }
+
+  .wrap { display: grid; grid-template-columns: 210px 1fr; gap: 24px; max-width: 1120px; margin: 0 auto; padding: 20px; }
+
+  nav {
+    position: sticky; top: 108px; align-self: start; font-size: 14px;
+    max-height: calc(100vh - 130px); overflow: auto; padding-right: 4px;
+  }
+  nav a {
+    display: block; color: var(--subtext0); text-decoration: none; padding: 6px 10px;
+    border-radius: 7px; border-left: 2px solid transparent; margin-bottom: 1px;
+  }
+  nav a:hover { color: var(--fg); background: var(--surface0); }
+  nav a:focus-visible { outline: 2px solid var(--pink); outline-offset: -2px; }
+
+  #filter {
+    width: 100%; padding: 10px 14px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--surface0); color: var(--fg); font: inherit; margin-bottom: 14px;
+  }
+  #filter::placeholder { color: var(--overlay1); }
+  #filter:focus { outline: none; border-color: var(--pink); box-shadow: 0 0 0 3px rgba(245,194,231,.18); }
+
+  section { margin-bottom: 32px; scroll-margin-top: 116px; }
+  section > h2 { font-size: 16.5px; margin: 0 0 3px; color: var(--fg); }
+  section > .blurb { color: var(--subtext0); font-size: 13.5px; margin: 0 0 14px; }
+
+  .ep {
+    border: 1px solid var(--line); background: var(--surface0); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 10px;
+  }
   .ep-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .m { font: 700 12px var(--mono); padding: 2px 8px; border-radius: 5px; letter-spacing: .04em; }
-  .m.GET { background: rgba(110,231,135,.14); color: var(--get); }
-  .m.POST { background: rgba(240,198,116,.15); color: var(--post); }
-  .m.PUT { background: rgba(122,162,255,.15); color: var(--put); }
-  .m.DELETE { background: rgba(255,107,107,.15); color: var(--del); }
-  .m.WS { background: rgba(180,140,255,.18); color: #c4a7ff; }
-  .path { font: 600 14px/1.3 var(--mono); word-break: break-all; }
-  .auth { margin-left: auto; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-          color: var(--muted); border: 1px solid var(--line); padding: 1px 7px; border-radius: 20px; }
-  .auth.public { color: var(--get); border-color: rgba(110,231,135,.4); }
-  .auth.jwt, .auth.auth { color: var(--put); border-color: rgba(122,162,255,.4); }
-  .auth.admin, .auth.owner, .auth.pet { color: var(--post); border-color: rgba(240,198,116,.4); }
-  .auth.bot, .auth.key { color: #c4a7ff; border-color: rgba(180,140,255,.4); }
-  .desc { margin: 8px 0 0; color: #cfd3db; font-size: 14px; }
-  .params { margin: 8px 0 0; border-collapse: collapse; width: 100%; font-size: 13px; }
-  .params td { padding: 3px 8px 3px 0; vertical-align: top; }
-  .params td:first-child { font: 600 12px var(--mono); color: var(--accent); white-space: nowrap; }
-  .note { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
-  pre { margin: 8px 0 0; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
-        padding: 8px 10px; overflow: auto; font: 12px/1.5 var(--mono); }
-  code { font: 12px var(--mono); background: var(--panel2); padding: 1px 5px; border-radius: 4px; }
+
+  .m {
+    font: 700 12px var(--mono); padding: 2px 8px; border-radius: 5px; letter-spacing: .04em;
+    border: 1px solid transparent; flex-shrink: 0;
+  }
+  .m.GET    { background: rgba(166,227,161,.14); color: var(--get);  border-color: rgba(166,227,161,.35); }
+  .m.POST   { background: rgba(249,226,175,.14); color: var(--post); border-color: rgba(249,226,175,.35); }
+  .m.PUT    { background: rgba(137,180,250,.16); color: var(--put);  border-color: rgba(137,180,250,.35); }
+  .m.DELETE { background: rgba(243,139,168,.16); color: var(--del);  border-color: rgba(243,139,168,.35); }
+  .m.WS     { background: rgba(203,166,247,.16); color: var(--ws);   border-color: rgba(203,166,247,.35); }
+
+  .path { font: 600 14px/1.35 var(--mono); word-break: break-all; color: var(--fg); }
+
+  .auth {
+    margin-left: auto; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--subtext0); border: 1px solid var(--line); padding: 2px 8px; border-radius: 20px;
+    flex-shrink: 0;
+  }
+  .auth.public { color: var(--green); border-color: rgba(166,227,161,.4); }
+  .auth.jwt, .auth.auth { color: var(--blue); border-color: rgba(137,180,250,.4); }
+  .auth.admin, .auth.owner, .auth.pet { color: var(--peach); border-color: rgba(250,179,135,.4); }
+  .auth.bot, .auth.key { color: var(--mauve); border-color: rgba(203,166,247,.4); }
+
+  .desc { margin: 9px 0 0; color: var(--subtext1); font-size: 14px; }
+
+  .params { margin: 10px 0 0; border-collapse: collapse; width: 100%; font-size: 13px; }
+  .params td { padding: 4px 10px 4px 0; vertical-align: top; border-top: 1px solid var(--surface1); }
+  .params tr:first-child td { border-top: none; }
+  .params td:first-child { font: 600 12px var(--mono); color: var(--pink); white-space: nowrap; }
+
+  .note { margin: 9px 0 0; font-size: 13px; color: var(--muted); }
+
+  pre {
+    margin: 9px 0 0; background: var(--mantle); border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 11px; overflow: auto; font: 12px/1.5 var(--mono); color: var(--subtext1);
+  }
+  code { font: 12px var(--mono); background: var(--mantle); color: var(--pink); padding: 1px 5px; border-radius: 4px; }
+
   .hidden { display: none; }
   a.self { color: var(--accent); text-decoration: none; }
-  @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } nav { position: static; max-height: none; } }
+
+  ::selection { background: rgba(245,194,231,.28); color: var(--fg); }
+
+  /* Scrollbars, for the browsers that respect this */
+  * { scrollbar-color: var(--surface2) var(--mantle); scrollbar-width: thin; }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 760px) {
+    .wrap { grid-template-columns: 1fr; gap: 14px; padding: 14px; }
+    nav {
+      position: sticky; top: 0; z-index: 4; max-height: none;
+      display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
+      padding: 8px 2px 10px; margin: -4px -14px 4px; padding-left: 14px; padding-right: 14px;
+      background: var(--bg); border-bottom: 1px solid var(--line);
+    }
+    nav a { white-space: nowrap; padding: 6px 12px; background: var(--surface0); margin-bottom: 0; }
+    nav a:hover { background: var(--surface1); }
+    header { padding: 18px 14px 12px; }
+    h1 { font-size: 18px; }
+    header p { font-size: 13px; }
+  }
+
+  @media (max-width: 480px) {
+    body { font-size: 14px; }
+    .ep { padding: 11px 12px; }
+    .ep-head { gap: 8px; }
+    .auth { margin-left: 0; order: 3; flex-basis: 100%; }
+    .path { font-size: 13px; }
+    .params td { display: block; padding: 2px 0; }
+    .params td:first-child { padding-top: 6px; }
+    .params tr:first-child td:first-child { padding-top: 2px; }
+    #filter { font-size: 16px; } /* avoid iOS zoom-on-focus */
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>Doughmination Restful — API reference</h1>
+  <h1>Doughmination Restful <span class="accent-dot">—</span> API reference</h1>
   <p>Universal API: live Discord presence (Lanyard), Discord profiles, the plural system, and misc services. Base URL: <code>https://restful.doughmination.uk</code></p>
 </header>
 

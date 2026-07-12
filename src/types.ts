@@ -9,6 +9,24 @@ export interface Env {
   GATEWAY: DurableObjectNamespace;
   PROFILE_CACHE: KVNamespace;
 
+  /** Durable Object that runs the Doughmination system API (/v2/plural,
+   *  /v2/battery, /v2/system-data) — state store + realtime WebSocket hub. */
+  SYSTEM: DurableObjectNamespace;
+
+  // ---- Doughmination system API (see ./system/types.ts) ------------------
+  SYSTEM_TOKEN?: string;
+  CACHE_TTL?: string;
+  JWT_SECRET?: string;
+  TURNSTILE_SECRET?: string;
+  TURNSILE_SECRET?: string;
+  ADMIN_USERNAME?: string;
+  ADMIN_PASSWORD?: string;
+  ADMIN_DISPLAY_NAME?: string;
+  DOUGH_BOT_TOKEN?: string;
+  BATTERY_API_KEYS?: string;
+  BASE_URL?: string;
+  CORS_ORIGINS?: string;
+
   DISCORD_BOT_TOKEN: string;
   /** Optional self-bot token for rich profile data. Off by default. */
   DISCORD_USER_TOKEN?: string;
@@ -42,6 +60,14 @@ export interface Env {
   REVIEWDB_API_BASE?: string;
   /** Max ReviewDB reviews to include per user (default 25). */
   REVIEWDB_MAX?: string;
+
+  // ---- contribapi (/v2/contribapi) — git contribution heatmaps -----------
+  /** GitHub username whose contribution calendar is fetched. */
+  GITHUB_USERNAME?: string;
+  /** GitHub token (fine-grained PAT is enough) for the GraphQL calendar. */
+  GITHUB_TOKEN?: string;
+  /** Codeberg/Forgejo username whose heatmap is fetched (no token needed). */
+  CODEBERG_USERNAME?: string;
 }
 
 export type DiscordStatus = "online" | "idle" | "dnd" | "offline";

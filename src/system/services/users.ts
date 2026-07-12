@@ -1,0 +1,235 @@
+/**
+ * Copyright (c) 2026 Clove Twilight
+ * Licensed under the ESAL-2.0 Licence.
+ * See LICENCE.md in the project root for full licence information.
+ */
+
+/**
+ * User management service. Same semantics/owner-protection as the old
+ * backend; storage is the DO blob store (key "users") instead of users.json,
+ * and hashing is PBKDF2 via ../security.
+ */
+
+import type { User, UserCreate, UserUpdate } from "../models";
+import { adminUsername, adminPassword, adminDisplayName } from "../config";
+import { hashPassword, verifyPassword, isSupportedHash } from "../security";
+import { rt } from "../runtime";
+
+const USERS_KEY = "users";
+
+export function getOwnerUsername(): string {
+  return adminUsername();
+}
+
+export function isOwnerUsername(username: string): boolean {
+  return username.toLowerCase() === getOwnerUsername().toLowerCase();
+}
+
+export async function getUsers(): Promise<User[]> {
+  const usersData = await rt().store.get<Array<Record<string, unknown>>>(USERS_KEY, []);
+
+  return usersData.map((userDict) => {
+    if (!("is_owner" in userDict)) userDict.is_owner = false;
+    if (!("is_pet" in userDict)) userDict.is_pet = false;
+
+    if (isOwnerUsername(String(userDict.username ?? ""))) {
+      userDict.is_owner = true;
+      userDict.is_admin = true;
+      userDict.is_pet = true;
+    }
+    return userDict as unknown as User;
+  });
+}
+
+export async function saveUsers(users: User[]): Promise<void> {
+  for (const user of users) {
+    if (isOwnerUsername(user.username)) {
+      user.is_owner = true;
+      user.is_admin = true;
+      user.is_pet = true;
+    }
+  }
+  await rt().store.put(USERS_KEY, users);
+}
+
+export async function getUserByUsername(username: string): Promise<User | null> {
+  const users = await getUsers();
+  return users.find((u) => u.username.toLowerCase() === username.toLowerCase()) ?? null;
+}
+
+export async function getUserById(userId: string): Promise<User | null> {
+  const users = await getUsers();
+  return users.find((u) => u.id === userId) ?? null;
+}
+
+export async function createUser(
+  userCreate: UserCreate,
+  requestingUser?: User | null,
+): Promise<User> {
+  const users = await getUsers();
+
+  if (await getUserByUsername(userCreate.username)) {
+    throw new Error(`Username '${userCreate.username}' already exists`);
+  }
+
+  if (isOwnerUsername(userCreate.username) && requestingUser != null) {
+    throw new Error(
+      "Cannot create user with owner username. Owner account must be created via initial setup.",
+    );
+  }
+
+  let isOwner: boolean;
+  let isAdmin: boolean;
+  let isPet: boolean;
+
+  if (isOwnerUsername(userCreate.username)) {
+    isOwner = true;
+    isAdmin = true;
+    isPet = false;
+  } else {
+    isOwner = false;
+    isAdmin = userCreate.is_admin;
+    isPet = userCreate.is_pet;
+  }
+
+  const newUser: User = {
+    id: crypto.randomUUID(),
+    username: userCreate.username,
+    password_hash: await hashPassword(userCreate.password),
+    display_name: userCreate.display_name ?? null,
+    is_admin: isAdmin,
+    is_owner: isOwner,
+    is_pet: isPet,
+    avatar_url: null,
+  };
+
+  users.push(newUser);
+  await saveUsers(users);
+  return newUser;
+}
+
+export async function updateUser(
+  userId: string,
+  userUpdate: UserUpdate,
+  requestingUser?: User | null,
+): Promise<User | null> {
+  const users = await getUsers();
+
+  const index = users.findIndex((u) => u.id === userId);
+  if (index === -1) return null;
+
+  const user = users[index];
+
+  if (user.is_owner && userUpdate.is_admin === false) {
+    throw new Error("Cannot remove admin privileges from owner");
+  }
+
+  if (requestingUser && user.is_admin && requestingUser.id !== user.id) {
+    if (!requestingUser.is_owner) {
+      throw new Error("Only the owner can modify admin accounts");
+    }
+  }
+
+  let passwordHash = user.password_hash;
+  if (userUpdate.current_password && userUpdate.new_password) {
+    if (!(await verifyPassword(userUpdate.current_password, user.password_hash))) {
+      throw new Error("Current password is incorrect");
+    }
+    passwordHash = await hashPassword(userUpdate.new_password);
+  }
+
+  const newIsOwner = isOwnerUsername(user.username);
+  const newIsAdmin = newIsOwner ? true : userUpdate.is_admin ?? user.is_admin;
+  const newIsPet = userUpdate.is_pet ?? user.is_pet;
+
+  const updatedUser: User = {
+    id: user.id,
+    username: user.username,
+    password_hash: passwordHash,
+    display_name: userUpdate.display_name ?? user.display_name,
+    is_admin: newIsAdmin,
+    is_owner: newIsOwner,
+    is_pet: newIsPet,
+    avatar_url: userUpdate.avatar_url ?? user.avatar_url ?? null,
+  };
+
+  users[index] = updatedUser;
+  await saveUsers(users);
+  return updatedUser;
+}
+
+export async function deleteUser(userId: string, requestingUser?: User | null): Promise<boolean> {
+  const users = await getUsers();
+
+  const userToDelete = users.find((u) => u.id === userId);
+  if (!userToDelete) return false;
+
+  if (userToDelete.is_owner) {
+    throw new Error("Cannot delete the owner account");
+  }
+
+  if (requestingUser && userToDelete.is_admin && !requestingUser.is_owner) {
+    throw new Error("Only the owner can delete admin accounts");
+  }
+
+  const remaining = users.filter((u) => u.id !== userId);
+  if (remaining.length < users.length) {
+    await saveUsers(remaining);
+    return true;
+  }
+  return false;
+}
+
+export async function verifyUser(username: string, password: string): Promise<User | null> {
+  const user = await getUserByUsername(username);
+  if (user && (await verifyPassword(password, user.password_hash))) {
+    return user;
+  }
+  return null;
+}
+
+/**
+ * Seed the owner account from ADMIN_* env vars if no users exist yet.
+ * Runs lazily on first request (there is no startup phase on a Worker).
+ * ADMIN_PASSWORD may be a plaintext password or a pre-computed pbkdf2 hash.
+ */
+export async function initializeAdminUser(): Promise<void> {
+  const users = await getUsers();
+  if (users.length > 0) return;
+
+  const username = adminUsername();
+  let passwordOrHash = adminPassword();
+  const displayName = adminDisplayName();
+
+  if (!passwordOrHash) {
+    console.warn("No ADMIN_PASSWORD set. Using default password 'admin'.");
+    passwordOrHash = "admin";
+  }
+
+  try {
+    if (isSupportedHash(passwordOrHash)) {
+      const newUser: User = {
+        id: crypto.randomUUID(),
+        username,
+        password_hash: passwordOrHash,
+        display_name: displayName,
+        is_admin: true,
+        is_owner: true,
+        is_pet: false,
+        avatar_url: null,
+      };
+      await saveUsers([...users, newUser]);
+    } else {
+      await createUser({
+        username,
+        password: passwordOrHash,
+        display_name: displayName,
+        is_admin: true,
+        is_pet: false,
+      });
+    }
+    console.info(`Seeded owner user: ${username}`);
+  } catch (err) {
+    console.error(`Error creating owner user: ${String(err)}`);
+  }
+}

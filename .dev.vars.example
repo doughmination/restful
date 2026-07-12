@@ -19,3 +19,38 @@ DISCORD_USER_TOKEN2=
 # OPTIONAL third user token — extra headroom / backup if the first two are both
 # cooling down from a 429. Same ToS warning.
 DISCORD_USER_TOKEN3=
+
+# =====================================================================
+# Doughmination system API (/v2/plural, /v2/battery, /v2/system-data)
+# =====================================================================
+
+# PluralKit system token (Authorization header for api.pluralkit.me).
+SYSTEM_TOKEN=
+
+# HMAC secret used to sign JWTs. REQUIRED in production — set to a long random
+# string, e.g. `openssl rand -base64 48`.
+JWT_SECRET=
+
+# Cloudflare Turnstile secret (login/signup captcha).
+TURNSTILE_SECRET=
+
+# Initial owner account, seeded on first request if no users exist yet.
+# ADMIN_PASSWORD may be a plaintext password OR a precomputed pbkdf2$... hash.
+# (ADMIN_USERNAME / ADMIN_DISPLAY_NAME live in wrangler.jsonc vars.)
+ADMIN_PASSWORD=
+
+# MANUAL bot token for /v2/plural/bot/* — nothing is generated any more.
+# Give this exact value to the Discord bot as DOUGH_API_TOKEN.
+DOUGH_BOT_TOKEN=
+
+# MANUAL battery-report key(s), comma-separated. Devices send it as the
+# `X-Battery-Key` header to POST /v2/battery.
+BATTERY_API_KEYS=
+
+# ---- contribapi (/v2/contribapi) — merged git contribution heatmaps --------
+# Codeberg/Forgejo needs no token for the public heatmap endpoint.
+CODEBERG_USERNAME=
+# GitHub needs a token. A fine-grained PAT with read access is enough for the
+# contribution calendar. https://github.com/settings/personal-access-tokens
+GITHUB_USERNAME=
+GITHUB_TOKEN=

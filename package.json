@@ -1,19 +1,24 @@
 {
   "name": "dough-restful",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Combined Discord presence (Lanyard-style) + profile/badges (dstn.to-style) API on a single Cloudflare Worker + Durable Object, backed by one Discord bot.",
+  "description": "Universal Cloudflare Worker API: Discord presence (Lanyard) + conribapi + profiles/badges + the Doughmination plural system API, backed by Durable Objects.",
   "type": "module",
+  "packageManager": "bun@1.1.42",
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "dev": "bunx wrangler dev",
+    "deploy": "bunx wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "tail": "wrangler tail",
-    "decode": "node scripts/decode-super-properties.mjs"
+    "tail": "bunx wrangler tail",
+    "decode": "bun scripts/decode-super-properties.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.12.29",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260617.1",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "typescript": "^6.0.3",
-    "wrangler": "^4.105.0"
+    "wrangler": "^4.110.0"
   }
 }

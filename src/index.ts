@@ -155,31 +155,9 @@ export default {
         data: {
           service: "Doughmination API",
           description: "Universal API: live Discord presence + profiles + plural system.",
-          licence: "ESAL-2.0",
+          licence: "ESAL-2.1",
           repository_url: "https://github.com/doughmination/restful",
           docs: "/docs",
-          namespaces: {
-            lanyard: [
-              "/v2/lanyard/users/:id           (presence)",
-              "/v2/lanyard/users?ids=a,b,c     (batch presence, up to 100)",
-              "/v2/lanyard/ws                  (realtime socket)",
-              "/v2/lanyard/status              (gateway health)",
-            ],
-            discord: [
-              "/v2/discord/users/:id           (profile + badges + live presence)",
-              "/v2/discord/users?ids=a,b,c     (batch, up to 100)",
-              "/v2/discord/guilds/:invite",
-              "/v2/discord/girls/:idType/:id   (idType: role | member)",
-            ],
-            plural: [
-              "/v2/plural/system, /v2/plural/members, /v2/plural/fronters, ...",
-              "/v2/plural/ws                   (realtime socket)",
-            ],
-            contrib: [
-              "/v2/contribapi                  (merged git contribution heatmaps)",
-            ],
-            misc: ["/v2/battery, /v2/battery/:device", "/v2/system-data (visitor logs)"],
-          },
         },
       } as never);
     }

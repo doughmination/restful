@@ -27,7 +27,7 @@ export function systemToken(): string | undefined {
 export function pluralkitHeaders(): Record<string, string> {
   const token = systemToken();
   return {
-    "User-Agent": "doughmination-restful/2.0 (+https://doughmination.uk)",
+    "User-Agent": "doughmination-api/2.0 (+https://doughmination.uk)",
     ...(token ? { Authorization: token } : {}),
   };
 }

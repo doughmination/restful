@@ -153,7 +153,7 @@ export default {
       return json({
         success: true,
         data: {
-          service: "Doughmination Restful",
+          service: "Doughmination API",
           description: "Universal API: live Discord presence + profiles + plural system.",
           licence: "ESAL-2.0",
           repository_url: "https://github.com/doughmination/restful",

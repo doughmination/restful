@@ -9,7 +9,7 @@
  * ===================================================================== */
 
 export const CONTRIB_USER_AGENT =
-  "doughmination-restful/contribapi (forked from: https://codeberg.org/dragsbruh/contribapi)";
+  "doughmination-api/contribapi (forked from: https://codeberg.org/dragsbruh/contribapi)";
 
 /** One day on a contribution heatmap. `timestamp` is unix seconds. */
 export interface Day {

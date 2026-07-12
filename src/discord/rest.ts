@@ -217,7 +217,7 @@ export async function fetchUserProfile(env: Env, id: string): Promise<UserProfil
     lastStatus = res.status;
     lastRetryAfter = Number(res.headers.get("retry-after")) || 0;
     console.warn(
-      `[dough-restful] user-token #${idx + 1} /users/${id}/profile -> HTTP ${res.status}` +
+      `[dough-api] user-token #${idx + 1} /users/${id}/profile -> HTTP ${res.status}` +
         (lastRetryAfter ? ` (retry ${lastRetryAfter}s)` : "")
     );
     // Only a rate-limit is worth retrying on another token; 401/403/404 would
@@ -244,11 +244,11 @@ async function tryJson(url: string, headers: Record<string, string>, label: stri
     try {
       return { raw: JSON.parse(text), status: 200 };
     } catch {
-      console.warn(`[dough-restful] ${label} 200 non-JSON: ${text.slice(0, 100)}`);
+      console.warn(`[dough-api] ${label} 200 non-JSON: ${text.slice(0, 100)}`);
       return { raw: null, status: 200 };
     }
   }
-  console.warn(`[dough-restful] ${label} HTTP ${res.status}: ${text.slice(0, 140)}`);
+  console.warn(`[dough-api] ${label} HTTP ${res.status}: ${text.slice(0, 140)}`);
   return { raw: null, status: res.status };
 }
 

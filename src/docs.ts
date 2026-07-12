@@ -58,12 +58,22 @@ export const DOCS_HTML = `<!doctype html>
   header {
     padding: 24px 20px 14px; border-bottom: 1px solid var(--line);
     position: sticky; top: 0; background: linear-gradient(var(--bg), rgba(30,30,46,.94));
-    backdrop-filter: blur(6px); z-index: 5;
+    backdrop-filter: blur(6px); z-index: 20;
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;
   }
+  .header-text { min-width: 0; }
   h1 { margin: 0 0 4px; font-size: 21px; color: var(--fg); }
   h1 .accent-dot { color: var(--accent); }
   header p { margin: 0; color: var(--subtext0); font-size: 13.5px; }
   header code { color: var(--pink); background: var(--surface0); border: 1px solid var(--line); word-break: break-all; }
+
+  .nav-toggle {
+    display: none; flex-shrink: 0; width: 38px; height: 38px; align-items: center; justify-content: center;
+    background: var(--surface0); border: 1px solid var(--line); border-radius: 8px;
+    color: var(--fg); font-size: 17px; cursor: pointer;
+  }
+  .nav-toggle:hover { background: var(--surface1); }
+  .nav-toggle:focus-visible { outline: 2px solid var(--pink); outline-offset: 1px; }
 
   .wrap { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 20px; max-width: 980px; margin: 0 auto; padding: 20px; }
 
@@ -143,18 +153,25 @@ export const DOCS_HTML = `<!doctype html>
   /* ---------- Responsive ---------- */
   @media (max-width: 760px) {
     .wrap { grid-template-columns: 1fr; gap: 14px; padding: 14px; }
+    .nav-toggle { display: flex; }
     nav {
-      position: sticky; top: 0; z-index: 4; max-height: none;
-      display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
-      padding: 8px 2px 10px; margin: -4px -14px 4px; padding-left: 14px; padding-right: 14px;
-      background: var(--bg); border-bottom: 1px solid var(--line);
+      position: static; z-index: auto; align-self: auto;
+      display: flex; flex-direction: column; gap: 2px;
+      max-height: 0; overflow: hidden; padding: 0 6px;
+      background: var(--mantle); border: 1px solid var(--line); border-radius: 10px;
+      transition: max-height .22s ease, padding .22s ease, margin .22s ease;
+      margin-bottom: 0;
     }
-    nav a { white-space: nowrap; padding: 6px 12px; background: var(--surface0); margin-bottom: 0; }
+    body.nav-open nav {
+      max-height: 60vh; overflow-y: auto; padding: 8px 6px; margin-bottom: 4px;
+    }
+    nav a { white-space: normal; padding: 9px 10px; border-radius: 7px; }
     nav a:hover { background: var(--surface1); }
     header { padding: 18px 14px 12px; }
     h1 { font-size: 18px; }
     header p { font-size: 13px; }
   }
+
 
   @media (max-width: 480px) {
     body { font-size: 14px; }
@@ -171,8 +188,13 @@ export const DOCS_HTML = `<!doctype html>
 </head>
 <body>
 <header>
-  <h1>Doughmination Restful <span class="accent-dot">—</span> API reference</h1>
-  <p>Universal API: live Discord presence (Lanyard), Discord profiles, the plural system, and misc services. Base URL: <code>https://doughmination.uk</code></p>
+  <div class="header-text">
+    <h1>Doughmination API reference</h1>
+    <p>Universal API: live Discord presence (Lanyard), Discord profiles, the plural system, and misc services. Base URL: <code>https://doughmination.uk</code></p>
+  </div>
+  <button id="navToggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">
+    <span aria-hidden="true">☰</span>
+  </button>
 </header>
 
 <div class="wrap">
@@ -428,6 +450,30 @@ function render() {
 }
 
 render();
+
+var navToggle = document.getElementById("navToggle");
+var navEl = document.getElementById("nav");
+
+function setNavOpen(open) {
+  document.body.classList.toggle("nav-open", open);
+  navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  navToggle.querySelector("span").textContent = open ? "✕" : "☰";
+}
+
+navToggle.addEventListener("click", function () {
+  setNavOpen(!document.body.classList.contains("nav-open"));
+});
+
+navEl.addEventListener("click", function (e) {
+  if (e.target.tagName === "A") setNavOpen(false);
+});
+
+document.addEventListener("click", function (e) {
+  if (!document.body.classList.contains("nav-open")) return;
+  if (navEl.contains(e.target) || navToggle.contains(e.target)) return;
+  setNavOpen(false);
+});
+
 
 document.getElementById("filter").addEventListener("input", function (e) {
   var q = e.target.value.trim().toLowerCase();

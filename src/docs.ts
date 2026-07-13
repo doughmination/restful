@@ -255,7 +255,7 @@ var GROUPS = [
     id: "minecraft", name: "Minecraft", blurb: "Skins and Hypixel stats for a Minecraft account.",
     endpoints: [
       { m: "GET", path: "/minecraft/general/:uuid", auth: "public",
-        desc: "A player's Mojang identity: username, UUID (both dashed and short forms), skin and cape texture URLs, the skin's arm model (classic or slim), and a set of ready-to-embed mc-heads render images (face, head, body, player, combo, skin) — each render includes the overlay/hat layer, with `_flat` variants for the inner skin only. Returns 404 if no Minecraft account has that UUID.",
+        desc: "A player's Mojang identity: username, UUID (both dashed and short forms), skin and cape texture URLs, the skin's arm model (classic or slim), and a set of ready-to-embed mc-heads render images (face, head, body, player, combo, skin) — each render includes the overlay/hat layer, with _flat variants for the inner skin only. Returns 404 if no Minecraft account has that UUID.",
         params: [["uuid", "Minecraft UUID — 32 hex characters, dashes optional."], ["?fresh / ?nocache / ?refresh", "Skip the cache and fetch fresh."]],
         example: 'GET /minecraft/general/853c80ef3c3749fdaa49938b674adae6  →  { name, uuid, skin_url, cape_url, skin_model, render: { face, face_flat, head, head_flat, body, body_flat, player, player_flat, combo, skin } }' },
       { m: "GET", path: "/minecraft/hypixel/:uuid", auth: "public",

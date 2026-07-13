@@ -136,7 +136,7 @@ export function isMinecraftUuid(uuid: string): boolean {
 
 const generalKey = (short: string) => `minecraft:general:${short}`;
 const hypixelKey = (short: string) => `minecraft:hypixel:${short}`;
-/** KV key holding the accumulated registry of vanilla cape textures we've seen. */
+/** KV key holding the persistent memory of vanilla cape textures we've seen. */
 const VANILLA_CAPES_KEY = "minecraft:capes:vanilla";
 
 interface MojangTexturePayload {
@@ -156,7 +156,10 @@ interface MojangProfileResponse {
 interface CapesDevEntry {
   type: string;
   exists: boolean;
+  /** capes.dev /get/<hash> — returns JSON metadata, NOT an image. */
   capeUrl?: string | null;
+  /** capes.dev /img/<hash> — the rendered cape PNG. This is what we expose. */
+  imageUrl?: string | null;
 }
 
 const DOUGH_BASE_URL = "https://doughmination.uk";
@@ -183,28 +186,33 @@ async function fetchDoughminationCape(env: Env, short: string): Promise<UnifiedC
 }
 
 /**
- * List every cape a player has via capes.dev, which aggregates all the cape
- * providers (Minecraft, OptiFine, MinecraftCapes, LabyMod, 5zig, TLauncher,
- * SkinMC). Returns only the providers where a cape actually exists. Best-effort:
- * any failure yields [] so the general endpoint still succeeds without capes.
+ * Load every cape a player has straight from capes.dev's /load endpoint, which
+ * re-checks all providers (Minecraft, OptiFine, MinecraftCapes, LabyMod, 5zig,
+ * TLauncher, SkinMC) fresh. Returns only providers where a cape exists.
+ *
+ * Returns null (not []) when capes.dev itself couldn't be reached or parsed, so
+ * the caller can tell "definitely no capes" ([]) apart from "load failed" (null)
+ * and avoid caching a transient failure.
  */
-async function fetchCapes(short: string): Promise<UnifiedCape[]> {
+async function fetchCapes(short: string): Promise<UnifiedCape[] | null> {
   try {
     const res = await fetch(`${CAPES_API}/${short}`, {
       headers: { Accept: "application/json", "User-Agent": USER_AGENT },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return null;
     const body = (await res.json()) as Record<string, CapesDevEntry>;
     return Object.values(body)
       .filter((c) => c && c.exists)
       .map((c) => ({
         source: c.type,
-        cape_url: c.capeUrl ?? null,
+        // Expose the rendered PNG (/img), not /get which returns JSON.
+        cape_url: c.imageUrl ?? null,
       }));
   } catch {
-    return [];
+    return null;
   }
 }
+
 
 /** Pull the stable texture hash out of a textures.minecraft.net cape URL. */
 function capeTextureHash(url: string | null): string | null {
@@ -212,11 +220,12 @@ function capeTextureHash(url: string | null): string | null {
 }
 
 /**
- * Add a vanilla (Mojang) cape to the shared registry the first time we see it,
- * so /v2/minecraft/capes builds up a catalogue of every vanilla cape that has
- * passed through the API. Keyed by texture hash. Best-effort and fire-and-forget:
- * it reads-modifies-writes a single KV entry, so under heavy concurrency an
- * occasional new cape could be missed — acceptable for a slowly-growing list.
+ * Persist a vanilla (Mojang) cape to memory the first time we see it, keyed by
+ * texture hash so we build up the set of vanilla capes in circulation. Unlike the
+ * third-party providers (loaded fresh each request), vanilla capes are stored
+ * permanently (no TTL). Best-effort and fire-and-forget: it reads-modifies-writes
+ * one KV entry, so under heavy concurrency an occasional new cape could be missed
+ * — acceptable for a slowly-growing list.
  */
 function recordVanillaCape(env: Env, capeUrl: string | null, ctx?: ExecutionContext): void {
   const hash = capeTextureHash(capeUrl);
@@ -225,8 +234,8 @@ function recordVanillaCape(env: Env, capeUrl: string | null, ctx?: ExecutionCont
     try {
       const reg =
         ((await env.PROFILE_CACHE.get(VANILLA_CAPES_KEY, "json")) as VanillaCapeRegistry | null) ?? {};
-      if (reg[hash]) return; // already catalogued
-      reg[hash] = { hash, url: capeUrl, first_seen: Date.now() };
+      if (reg[hash]) return; // already remembered
+      reg[hash] = { source: "minecraft", cape_url: capeUrl };
       await env.PROFILE_CACHE.put(VANILLA_CAPES_KEY, JSON.stringify(reg));
     } catch {
       /* registry write failed — non-fatal */
@@ -235,10 +244,10 @@ function recordVanillaCape(env: Env, capeUrl: string | null, ctx?: ExecutionCont
   if (ctx) ctx.waitUntil(work);
 }
 
-/** The accumulated vanilla-cape catalogue, newest first. */
+/** The persisted set of vanilla capes we've seen, as { source, cape_url }. */
 export async function getVanillaCapeList(env: Env): Promise<VanillaCapeList> {
   const reg = ((await env.PROFILE_CACHE.get(VANILLA_CAPES_KEY, "json")) as VanillaCapeRegistry | null) ?? {};
-  const capes = Object.values(reg).sort((a, b) => b.first_seen - a.first_seen);
+  const capes = Object.values(reg);
   return { count: capes.length, capes };
 }
 
@@ -294,12 +303,15 @@ export async function getMinecraftGeneral(
   // independent upstreams, so fire them together. fetchMojangProfile throws
   // MojangUpstreamError if every source is blocked/errored, and returns null
   // only on a definitive not-found.
-  const [data, providerCapes, doughCape] = await Promise.all([
+  // OptiFine/LabyMod/etc. capes are loaded fresh every time (bounded only by the
+  // 5-min /general cache). Null means capes.dev failed — degrade to no capes.
+  const [data, providerCapesResult, doughCape] = await Promise.all([
     fetchMojangProfile(short),
     fetchCapes(short),
     fetchDoughminationCape(env, short),
   ]);
   if (!data) return null;
+  const providerCapes = providerCapesResult ?? [];
 
   name = data.name ?? null;
   const texturesB64 = data.properties?.find((p) => p.name === "textures")?.value;
@@ -314,8 +326,8 @@ export async function getMinecraftGeneral(
     }
   }
 
-  // Every vanilla cape we see contributes to the shared registry, so the list at
-  // /v2/minecraft/capes fills in over time. Best-effort, off the response path.
+  // Persist the equipped vanilla (Mojang) cape to memory so /v2/minecraft/capes
+  // builds up the set of vanilla capes seen. Best-effort, off the response path.
   recordVanillaCape(env, cape_url, ctx);
 
   const capes = doughCape ? [...providerCapes, doughCape] : providerCapes;

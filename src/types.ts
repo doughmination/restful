@@ -436,20 +436,19 @@ export interface UnifiedCape {
   cape_url: string | null;
 }
 
-/** One vanilla (Mojang) cape in the accumulated registry. */
+/** One vanilla (Mojang) cape we've persisted to memory. Same shape as an entry
+ *  in a player's `capes` array: just the provider and the cape image URL. */
 export interface VanillaCapeEntry {
-  /** textures.minecraft.net texture hash — the stable id for the cape. */
-  hash: string;
-  /** Full cape texture URL. */
-  url: string;
-  /** Epoch ms when this cape was first catalogued by the API. */
-  first_seen: number;
+  /** Always "minecraft" — these are vanilla Mojang capes. */
+  source: string;
+  /** Cape texture URL. */
+  cape_url: string;
 }
 
 /** Registry blob stored in KV: texture hash -> entry. */
 export type VanillaCapeRegistry = Record<string, VanillaCapeEntry>;
 
-/** Response for GET /v2/minecraft/capes — the built-up vanilla cape catalogue. */
+/** Response for GET /v2/minecraft/capes — the persisted vanilla capes. */
 export interface VanillaCapeList {
   count: number;
   capes: VanillaCapeEntry[];

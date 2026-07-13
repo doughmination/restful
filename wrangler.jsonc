@@ -39,6 +39,17 @@
 			"id": "0ad7fefa9239482a9028c820e4a0cec1"
 		}
 	],
+	// Static assets: everything under ./assets is served at the site root, so
+	// ./assets/capes/<uuid>.png is reachable at /capes/<uuid>.png and
+	// ./assets/icon.png at /icon.png. Unmatched paths fall through to the Worker
+	// router (src/index.ts). The ASSETS binding lets the Worker check whether a
+	// given asset exists (used for doughmination capes).
+	"assets": {
+		"directory": "./assets",
+		"binding": "ASSETS",
+		"html_handling": "none",
+		"not_found_handling": "none"
+	},
 	"triggers": {
 		"crons": [
 			"*/2 * * * *"

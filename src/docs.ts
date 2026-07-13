@@ -12,6 +12,7 @@ export const DOCS_HTML = `<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/png" href="/icon.png" />
 <title>Doughmination API reference</title>
 <style>
   :root {
@@ -255,9 +256,13 @@ var GROUPS = [
     id: "minecraft", name: "Minecraft", blurb: "Skins and Hypixel stats for a Minecraft account.",
     endpoints: [
       { m: "GET", path: "/minecraft/general/:uuid", auth: "public",
-        desc: "A player's Mojang identity: username, UUID (both dashed and short forms), skin and cape texture URLs, the skin's arm model (classic or slim), and a set of ready-to-embed mc-heads render images (face, head, body, player, combo, skin) — each render includes the overlay/hat layer, with _flat variants for the inner skin only. Returns 404 if no Minecraft account has that UUID.",
+        desc: "A player's Mojang identity: username, UUID (both dashed and short forms), skin and cape texture URLs, the skin's arm model (classic or slim), every cape the player has across providers (Minecraft, OptiFine, MinecraftCapes, LabyMod, 5zig, TLauncher, SkinMC — plus a custom 'doughmination' cape for hand-picked accounts) via the capes array, and a set of ready-to-embed mc-heads render images (face, head, body, player, combo, skin) — each render includes the overlay/hat layer, with _flat variants for the inner skin only. Returns 404 if no Minecraft account has that UUID.",
         params: [["uuid", "Minecraft UUID — 32 hex characters, dashes optional."], ["?fresh / ?nocache / ?refresh", "Skip the cache and fetch fresh."]],
-        example: 'GET /minecraft/general/853c80ef3c3749fdaa49938b674adae6  →  { name, uuid, skin_url, cape_url, skin_model, render: { face, face_flat, head, head_flat, body, body_flat, player, player_flat, combo, skin } }' },
+        example: 'GET /minecraft/general/853c80ef3c3749fdaa49938b674adae6  →  { name, uuid, skin_url, cape_url, skin_model, capes: [ { source, cape_url } ], render: { face, head, body, player, combo, skin } }' },
+      { m: "GET", path: "/minecraft/capes", auth: "public",
+        desc: "The accumulated catalogue of vanilla (Mojang) capes the API has seen. It grows over time: every account looked up via /minecraft/general contributes its equipped vanilla cape once, keyed by texture hash. Handy for building up a list of all vanilla capes in circulation.",
+        params: [],
+        example: 'GET /minecraft/capes  →  { count, capes: [ { hash, url, first_seen } ] }' },
       { m: "GET", path: "/minecraft/hypixel/:uuid", auth: "public",
         desc: "A player's Hypixel stats: the full player object (network level and every game's stats — Bedwars, SkyWars, Duels, and the rest) plus their SkyBlock profiles. Always returns 200; the 'source' field tells you whether each section loaded ('ok') or why it's null — 'not_found' if the player has never joined Hypixel, 'unavailable' if this server isn't serving Hypixel data.",
         params: [["uuid", "Minecraft UUID — 32 hex characters, dashes optional."], ["?fresh / ?nocache / ?refresh", "Skip the cache and fetch fresh."]],

@@ -14,14 +14,18 @@
 import type {
   Env,
   MinecraftSourceState,
+  UnifiedCape,
   UnifiedMinecraftGeneral,
   UnifiedMinecraftHypixel,
+  VanillaCapeList,
+  VanillaCapeRegistry,
 } from "./types";
 
 const MOJANG_PROFILE = "https://sessionserver.mojang.com/session/minecraft/profile";
 const HYPIXEL_BASE = "https://api.hypixel.net/v2";
 const CRAFTHEAD = "https://crafthead.net";
 const MCHEADS = "https://mc-heads.net";
+const CAPES_API = "https://api.capes.dev/load";
 const TTL_SECONDS = 300;
 const USER_AGENT = "doughmination-restful/2.0 (+https://doughmination.uk)";
 
@@ -132,6 +136,8 @@ export function isMinecraftUuid(uuid: string): boolean {
 
 const generalKey = (short: string) => `minecraft:general:${short}`;
 const hypixelKey = (short: string) => `minecraft:hypixel:${short}`;
+/** KV key holding the accumulated registry of vanilla cape textures we've seen. */
+const VANILLA_CAPES_KEY = "minecraft:capes:vanilla";
 
 interface MojangTexturePayload {
   textures?: {
@@ -144,6 +150,96 @@ interface MojangProfileResponse {
   id: string;
   name: string;
   properties?: Array<{ name: string; value: string }>;
+}
+
+/** One provider block in a capes.dev /load response. */
+interface CapesDevEntry {
+  type: string;
+  exists: boolean;
+  capeUrl?: string | null;
+}
+
+const DOUGH_BASE_URL = "https://doughmination.uk";
+
+/**
+ * Custom "doughmination" cape for hand-picked accounts. A cape is enabled simply
+ * by dropping a PNG at assets/capes/<uuid>.png (undashed or dashed) — this checks
+ * the ASSETS binding for its existence and, if found, returns a cape entry
+ * pointing at the public URL. Returns null when there's no file (or no binding).
+ */
+async function fetchDoughminationCape(env: Env, short: string): Promise<UnifiedCape | null> {
+  if (!env.ASSETS) return null;
+  const base = env.BASE_URL ?? DOUGH_BASE_URL;
+  for (const id of [short, dash(short)]) {
+    const url = `${base}/capes/${id}.png`;
+    try {
+      const res = await env.ASSETS.fetch(new Request(url, { method: "GET" }));
+      if (res.ok) return { source: "doughmination", cape_url: url };
+    } catch {
+      /* asset lookup failed — treat as no cape */
+    }
+  }
+  return null;
+}
+
+/**
+ * List every cape a player has via capes.dev, which aggregates all the cape
+ * providers (Minecraft, OptiFine, MinecraftCapes, LabyMod, 5zig, TLauncher,
+ * SkinMC). Returns only the providers where a cape actually exists. Best-effort:
+ * any failure yields [] so the general endpoint still succeeds without capes.
+ */
+async function fetchCapes(short: string): Promise<UnifiedCape[]> {
+  try {
+    const res = await fetch(`${CAPES_API}/${short}`, {
+      headers: { Accept: "application/json", "User-Agent": USER_AGENT },
+    });
+    if (!res.ok) return [];
+    const body = (await res.json()) as Record<string, CapesDevEntry>;
+    return Object.values(body)
+      .filter((c) => c && c.exists)
+      .map((c) => ({
+        source: c.type,
+        cape_url: c.capeUrl ?? null,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** Pull the stable texture hash out of a textures.minecraft.net cape URL. */
+function capeTextureHash(url: string | null): string | null {
+  return url?.match(/\/texture\/([0-9a-f]+)/i)?.[1]?.toLowerCase() ?? null;
+}
+
+/**
+ * Add a vanilla (Mojang) cape to the shared registry the first time we see it,
+ * so /v2/minecraft/capes builds up a catalogue of every vanilla cape that has
+ * passed through the API. Keyed by texture hash. Best-effort and fire-and-forget:
+ * it reads-modifies-writes a single KV entry, so under heavy concurrency an
+ * occasional new cape could be missed — acceptable for a slowly-growing list.
+ */
+function recordVanillaCape(env: Env, capeUrl: string | null, ctx?: ExecutionContext): void {
+  const hash = capeTextureHash(capeUrl);
+  if (!hash || !capeUrl) return;
+  const work = (async () => {
+    try {
+      const reg =
+        ((await env.PROFILE_CACHE.get(VANILLA_CAPES_KEY, "json")) as VanillaCapeRegistry | null) ?? {};
+      if (reg[hash]) return; // already catalogued
+      reg[hash] = { hash, url: capeUrl, first_seen: Date.now() };
+      await env.PROFILE_CACHE.put(VANILLA_CAPES_KEY, JSON.stringify(reg));
+    } catch {
+      /* registry write failed — non-fatal */
+    }
+  })();
+  if (ctx) ctx.waitUntil(work);
+}
+
+/** The accumulated vanilla-cape catalogue, newest first. */
+export async function getVanillaCapeList(env: Env): Promise<VanillaCapeList> {
+  const reg = ((await env.PROFILE_CACHE.get(VANILLA_CAPES_KEY, "json")) as VanillaCapeRegistry | null) ?? {};
+  const capes = Object.values(reg).sort((a, b) => b.first_seen - a.first_seen);
+  return { count: capes.length, capes };
 }
 
 /** Fetch a Hypixel v2 endpoint and unwrap { success, <key> }.
@@ -194,9 +290,15 @@ export async function getMinecraftGeneral(
   let cape_url: string | null = null;
   let skin_model: "classic" | "slim" | null = null;
 
-  // Throws MojangUpstreamError if every source is blocked/errored; returns null
+  // Profile resolution, cape aggregation, and the custom doughmination cape are
+  // independent upstreams, so fire them together. fetchMojangProfile throws
+  // MojangUpstreamError if every source is blocked/errored, and returns null
   // only on a definitive not-found.
-  const data = await fetchMojangProfile(short);
+  const [data, providerCapes, doughCape] = await Promise.all([
+    fetchMojangProfile(short),
+    fetchCapes(short),
+    fetchDoughminationCape(env, short),
+  ]);
   if (!data) return null;
 
   name = data.name ?? null;
@@ -212,6 +314,12 @@ export async function getMinecraftGeneral(
     }
   }
 
+  // Every vanilla cape we see contributes to the shared registry, so the list at
+  // /v2/minecraft/capes fills in over time. Best-effort, off the response path.
+  recordVanillaCape(env, cape_url, ctx);
+
+  const capes = doughCape ? [...providerCapes, doughCape] : providerCapes;
+
   const result: UnifiedMinecraftGeneral = {
     uuid: dash(short),
     uuid_short: short,
@@ -219,6 +327,7 @@ export async function getMinecraftGeneral(
     skin_url,
     skin_model,
     cape_url,
+    capes,
     // mc-heads renders the overlay (hat/jacket/second layer) by default, so the
     // base URLs include the outer layer; the `_flat` variants append `/nohelm`
     // to drop it and show the inner skin only. `face` is the 2D head, `head`

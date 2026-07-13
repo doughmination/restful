@@ -9,6 +9,10 @@ export interface Env {
   GATEWAY: DurableObjectNamespace;
   PROFILE_CACHE: KVNamespace;
 
+  /** Cloudflare Static Assets binding (./assets served at root). Used to check
+   *  whether a custom doughmination cape exists at /capes/<uuid>.png. */
+  ASSETS?: Fetcher;
+
   /** Durable Object that runs the Doughmination system API (/v2/plural,
    *  /v2/battery, /v2/system-data) — state store + realtime WebSocket hub. */
   SYSTEM: DurableObjectNamespace;
@@ -422,6 +426,35 @@ export interface UnifiedGirlsMember {
   communication_disabled_until: string | null;
 }
 
+/** One cape a player has, resolved via capes.dev across every cape provider
+ *  it knows (Minecraft, OptiFine, MinecraftCapes, LabyMod, 5zig, TLauncher,
+ *  SkinMC). Only providers where the player actually has a cape are listed. */
+export interface UnifiedCape {
+  /** Provider the cape lives on: "minecraft", "optifine", "labymod", etc. */
+  source: string;
+  /** Raw cape texture PNG. */
+  cape_url: string | null;
+}
+
+/** One vanilla (Mojang) cape in the accumulated registry. */
+export interface VanillaCapeEntry {
+  /** textures.minecraft.net texture hash — the stable id for the cape. */
+  hash: string;
+  /** Full cape texture URL. */
+  url: string;
+  /** Epoch ms when this cape was first catalogued by the API. */
+  first_seen: number;
+}
+
+/** Registry blob stored in KV: texture hash -> entry. */
+export type VanillaCapeRegistry = Record<string, VanillaCapeEntry>;
+
+/** Response for GET /v2/minecraft/capes — the built-up vanilla cape catalogue. */
+export interface VanillaCapeList {
+  count: number;
+  capes: VanillaCapeEntry[];
+}
+
 /** Mojang identity + skin/cape for a Minecraft account
  *  (/v2/minecraft/general/:uuid). */
 export interface UnifiedMinecraftGeneral {
@@ -434,8 +467,12 @@ export interface UnifiedMinecraftGeneral {
   skin_url: string | null;
   /** "classic" (Steve) or "slim" (Alex) arm model; null if unknown. */
   skin_model: "classic" | "slim" | null;
-  /** Raw cape texture file URL; null if the account has no cape. */
+  /** Raw texture URL of the *currently equipped* cape (from Mojang); null if
+   *  none. See `capes` for every cape the player has across providers. */
   cape_url: string | null;
+  /** Every cape the player has, one entry per provider that has one. Empty if
+   *  the player has no capes anywhere (or capes.dev couldn't be reached). */
+  capes: UnifiedCape[];
   /** Ready-to-embed render URLs from the public mc-heads.net proxy. Base URLs
    *  include the overlay (hat/jacket) layer; `_flat` variants show the inner
    *  skin only. */

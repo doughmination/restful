@@ -23,12 +23,13 @@ import type {
   UnifiedGirlsMember,
   UnifiedMinecraftGeneral,
   UnifiedMinecraftHypixel,
+  VanillaCapeList,
 } from "./types";
 import { getProfile } from "./profile";
 import { GatewayManager } from "./gateway";
 import { getGuildInvite } from "./guild";
 import { getGirlsResource, isGirlsIdType } from "./girls";
-import { getMinecraftGeneral, getMinecraftHypixel, normalizeMcUuid, MojangUpstreamError } from "./minecraft";
+import { getMinecraftGeneral, getMinecraftHypixel, getVanillaCapeList, normalizeMcUuid, MojangUpstreamError } from "./minecraft";
 import { getContributions } from "./contribapi";
 import { DOCS_HTML } from "./docs";
 import { SystemState } from "./system/do";
@@ -241,6 +242,14 @@ export default {
           500,
         );
       }
+    }
+
+    // ---- /v2/minecraft/capes  (accumulated vanilla cape catalogue) -------
+    // Grows as accounts are looked up via /general — every vanilla Mojang cape
+    // seen is catalogued once, keyed by texture hash.
+    if (path === "/v2/minecraft/capes") {
+      const data = await getVanillaCapeList(env);
+      return json<VanillaCapeList>({ success: true, data });
     }
 
     // ---- /v2/minecraft/general/:uuid  (Mojang profile + skin) ------------

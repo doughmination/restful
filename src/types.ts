@@ -436,8 +436,31 @@ export interface UnifiedMinecraftGeneral {
   skin_model: "classic" | "slim" | null;
   /** Raw cape texture file URL; null if the account has no cape. */
   cape_url: string | null;
-  /** Ready-to-embed render URLs from the public crafthead.net proxy. */
-  render: { avatar: string; head: string; body: string };
+  /** Ready-to-embed render URLs from the public mc-heads.net proxy. Base URLs
+   *  include the overlay (hat/jacket) layer; `_flat` variants show the inner
+   *  skin only. */
+  render: {
+    /** 2D head, overlay on. */
+    face: string;
+    /** 2D head, overlay off. */
+    face_flat: string;
+    /** Isometric 3D head, overlay on. */
+    head: string;
+    /** Isometric 3D head, overlay off. */
+    head_flat: string;
+    /** Isometric 3D full body, overlay on. */
+    body: string;
+    /** Isometric 3D full body, overlay off. */
+    body_flat: string;
+    /** Flat front-facing full body, overlay on. */
+    player: string;
+    /** Flat front-facing full body, overlay off. */
+    player_flat: string;
+    /** Face + body composite. */
+    combo: string;
+    /** Raw skin texture PNG. */
+    skin: string;
+  };
   updated_at: number;
 }
 

@@ -21,6 +21,7 @@ import type {
 const MOJANG_PROFILE = "https://sessionserver.mojang.com/session/minecraft/profile";
 const HYPIXEL_BASE = "https://api.hypixel.net/v2";
 const CRAFTHEAD = "https://crafthead.net";
+const MCHEADS = "https://mc-heads.net";
 const TTL_SECONDS = 300;
 const USER_AGENT = "doughmination-restful/2.0 (+https://doughmination.uk)";
 
@@ -218,10 +219,23 @@ export async function getMinecraftGeneral(
     skin_url,
     skin_model,
     cape_url,
+    // mc-heads renders the overlay (hat/jacket/second layer) by default, so the
+    // base URLs include the outer layer; the `_flat` variants append `/nohelm`
+    // to drop it and show the inner skin only. `face` is the 2D head, `head`
+    // the isometric 3D head, `body` the isometric 3D full body, `player` the
+    // flat front-facing full body, `combo` a face+body composite, and `skin`
+    // the raw texture PNG.
     render: {
-      avatar: `${CRAFTHEAD}/avatar/${short}`,
-      head: `${CRAFTHEAD}/head/${short}`,
-      body: `${CRAFTHEAD}/body/${short}`,
+      face: `${MCHEADS}/avatar/${short}`,
+      face_flat: `${MCHEADS}/avatar/${short}/nohelm`,
+      head: `${MCHEADS}/head/${short}`,
+      head_flat: `${MCHEADS}/head/${short}/nohelm`,
+      body: `${MCHEADS}/body/${short}`,
+      body_flat: `${MCHEADS}/body/${short}/nohelm`,
+      player: `${MCHEADS}/player/${short}`,
+      player_flat: `${MCHEADS}/player/${short}/nohelm`,
+      combo: `${MCHEADS}/combo/${short}`,
+      skin: `${MCHEADS}/skin/${short}`,
     },
     updated_at: Date.now(),
   };

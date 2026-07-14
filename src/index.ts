@@ -6,6 +6,7 @@
  *   /v2/discord/*     — general Discord info: profile, badges, guilds, girls
  *   /v2/plural/*      — Doughmination system API   (SystemState DO)
  *   /v2/devices/*     — device state (battery, etc.) (SystemState DO)
+ *   /v2/guestbook/*   — public guestbook            (SystemState DO)
  *   /v2/system-data/* — visitor logs + viewer      (SystemState DO)
  *
  * Two Durable Objects:
@@ -106,6 +107,8 @@ function isSystemPath(path: string): boolean {
     path.startsWith("/v2/plural/") ||
     path === "/v2/devices" ||
     path.startsWith("/v2/devices/") ||
+    path === "/v2/guestbook" ||
+    path.startsWith("/v2/guestbook/") ||
     path === "/v2/system-data" ||
     path.startsWith("/v2/system-data/")
   );

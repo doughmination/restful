@@ -215,7 +215,7 @@ var GROUPS = [
       { m: "GET", path: "Bearer JWT", auth: "jwt",
         desc: "Most /plural write endpoints need a login token. Get one from POST /plural/login, then send it as 'Authorization: Bearer <token>'. Tokens last 24 hours. Some routes additionally require an admin, owner, or pet role." },
       { m: "GET", path: "X-Battery-Key", auth: "key",
-        desc: "Reporting device state (POST /devices) needs your device key, sent as the 'X-Battery-Key' header." },
+        desc: "Reporting or deleting device state (POST/DELETE /devices) needs your device key, sent as the 'X-Battery-Key' header." },
       { m: "GET", path: "Bot token", auth: "bot",
         desc: "The /plural/bot/* endpoints are for the companion Discord bot: they need both a 'User-Agent: CloveShortcuts/<version>' header and the bot's token as 'Authorization: Bearer <token>'." }
     ]
@@ -390,7 +390,10 @@ var GROUPS = [
       { m: "GET", path: "/devices/:device", auth: "public", desc: "One device, or 404." },
       { m: "POST", path: "/devices?device=iphone&level=25&charging=1&lpm=0&wifi=Home", auth: "key",
         desc: "Report device state. Only 'device' is required; supplied fields are updated, the rest untouched. Send the X-Battery-Key header.",
-        params: [["device", "1–64 chars (required)."], ["level", "Optional. Integer 0–100."], ["charging", "Optional. 1 (true) or 0 (false)."], ["lpm", "Optional. 1 (true) or 0 (false) → lowPowerMode."], ["wifi", "Optional. Any string (network name), ≤128 chars."]] }
+        params: [["device", "1–64 chars (required)."], ["level", "Optional. Integer 0–100."], ["charging", "Optional. 1 (true) or 0 (false)."], ["lpm", "Optional. 1 (true) or 0 (false) → lowPowerMode."], ["wifi", "Optional. Any string (network name), ≤128 chars."]] },
+      { m: "DELETE", path: "/devices?device=iphone", auth: "key",
+        desc: "Delete a device's state. Returns 404 if the device doesn't exist. Send the X-Battery-Key header.",
+        params: [["device", "1–64 chars (required)."]] }
     ]
   },
   {

@@ -57,3 +57,12 @@ export async function setDeviceLevel(
   await saveAllLevels(levels);
   return { device, ...record };
 }
+
+/** Remove a device's record. Returns true if it existed and was deleted. */
+export async function deleteDevice(device: string): Promise<boolean> {
+  const levels = await getAllLevels();
+  if (!(device in levels)) return false;
+  delete levels[device];
+  await saveAllLevels(levels);
+  return true;
+}

@@ -201,7 +201,7 @@ export const DOCS_HTML = `<!doctype html>
 <div class="wrap">
   <nav id="nav"></nav>
   <div>
-    <input id="filter" placeholder="Filter endpoints… (e.g. fronters, battery, ws)" autocomplete="off" />
+    <input id="filter" placeholder="Filter endpoints… (e.g. fronters, devices, ws)" autocomplete="off" />
     <div id="content"></div>
   </div>
 </div>
@@ -215,7 +215,7 @@ var GROUPS = [
       { m: "GET", path: "Bearer JWT", auth: "jwt",
         desc: "Most /plural write endpoints need a login token. Get one from POST /plural/login, then send it as 'Authorization: Bearer <token>'. Tokens last 24 hours. Some routes additionally require an admin, owner, or pet role." },
       { m: "GET", path: "X-Battery-Key", auth: "key",
-        desc: "Reporting a battery level (POST /battery) needs your device key, sent as the 'X-Battery-Key' header." },
+        desc: "Reporting device state (POST /devices) needs your device key, sent as the 'X-Battery-Key' header." },
       { m: "GET", path: "Bot token", auth: "bot",
         desc: "The /plural/bot/* endpoints are for the companion Discord bot: they need both a 'User-Agent: CloveShortcuts/<version>' header and the bot's token as 'Authorization: Bearer <token>'." }
     ]
@@ -384,13 +384,13 @@ var GROUPS = [
     ]
   },
   {
-    id: "battery", name: "Battery", blurb: "Latest known battery level per device.",
+    id: "devices", name: "Devices", blurb: "Latest known device state (battery, charging, low power mode, wifi).",
     endpoints: [
-      { m: "GET", path: "/battery", auth: "public", desc: "All devices → { device, level, updated_at }." },
-      { m: "GET", path: "/battery/:device", auth: "public", desc: "One device, or 404." },
-      { m: "POST", path: "/battery?device=iphone&level=25", auth: "key",
-        desc: "Report a level (0–100) for a device. Send the X-Battery-Key header.",
-        params: [["device", "1–64 chars."], ["level", "Integer 0–100."]] }
+      { m: "GET", path: "/devices", auth: "public", desc: "All devices → { device, level, charging, lowPowerMode, wifi, updated_at }." },
+      { m: "GET", path: "/devices/:device", auth: "public", desc: "One device, or 404." },
+      { m: "POST", path: "/devices?device=iphone&level=25&charging=1&lpm=0&wifi=Home", auth: "key",
+        desc: "Report device state. Only 'device' is required; supplied fields are updated, the rest untouched. Send the X-Battery-Key header.",
+        params: [["device", "1–64 chars (required)."], ["level", "Optional. Integer 0–100."], ["charging", "Optional. 1 (true) or 0 (false)."], ["lpm", "Optional. 1 (true) or 0 (false) → lowPowerMode."], ["wifi", "Optional. Any string (network name), ≤128 chars."]] }
     ]
   },
   {

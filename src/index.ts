@@ -5,7 +5,7 @@
  *   /v2/lanyard/*     — live presence (Lanyard) + realtime socket
  *   /v2/discord/*     — general Discord info: profile, badges, guilds, girls
  *   /v2/plural/*      — Doughmination system API   (SystemState DO)
- *   /v2/battery/*     — device battery levels      (SystemState DO)
+ *   /v2/devices/*     — device state (battery, etc.) (SystemState DO)
  *   /v2/system-data/* — visitor logs + viewer      (SystemState DO)
  *
  * Two Durable Objects:
@@ -104,8 +104,8 @@ function isSystemPath(path: string): boolean {
   return (
     path === "/v2/plural" ||
     path.startsWith("/v2/plural/") ||
-    path === "/v2/battery" ||
-    path.startsWith("/v2/battery/") ||
+    path === "/v2/devices" ||
+    path.startsWith("/v2/devices/") ||
     path === "/v2/system-data" ||
     path.startsWith("/v2/system-data/")
   );
@@ -144,7 +144,7 @@ export default {
 
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
-    // ---- SystemState DO (plural / battery / system-data) -----------------
+    // ---- SystemState DO (plural / devices / system-data) -----------------
     // Forwarded first, and untouched, so its Hono CORS + WebSocket upgrade
     // (/v2/plural/ws) work end-to-end.
     if (isSystemPath(path)) {

@@ -397,6 +397,22 @@ var GROUPS = [
     ]
   },
   {
+    id: "guestbook", name: "Guestbook", blurb: "Public guestbook. Each entry gets a random UID so it can be deleted individually.",
+    endpoints: [
+      { m: "GET", path: "/guestbook?limit=50&offset=0", auth: "public",
+        desc: "List entries, newest first → { entries: [{ id, name, message, website, ts }], total, limit, offset }.",
+        params: [["limit", "Optional. 1–200, default 50."], ["offset", "Optional. ≥0, default 0."]] },
+      { m: "POST", path: "/guestbook", auth: "public",
+        desc: "Sign the guestbook. Honeypot (url2) + Turnstile (when configured) + per-IP rate limit (60s). Returns { ok, entry } with the new UID.",
+        example: 'POST body: { "name": "Clove", "message": "hi!", "website": "https://…", "turnstileToken": "…" }' },
+      { m: "DELETE", path: "/guestbook/:id", auth: "key",
+        desc: "Delete an entry by its UID. Returns 404 if not found. Send the X-Battery-Key header.",
+        params: [["id", "The entry's UID (required)."]] },
+      { m: "POST", path: "/guestbook/import", auth: "key",
+        desc: "Migration import: insert an entry with a fresh UID, bypassing captcha + rate limit. Send the X-Battery-Key header. Body { name, message, website? }." }
+    ]
+  },
+  {
     id: "system-data", name: "System-data — visitor logs", blurb: "Visit logging plus an admin-only log viewer.",
     endpoints: [
       { m: "POST", path: "/system-data/helper", auth: "public",

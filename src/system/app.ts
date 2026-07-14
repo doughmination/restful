@@ -11,6 +11,7 @@
  *   /v2/plural/*        — auth, system, members, fronting, users, metrics,
  *                         admin, member status, bot, SEO (robots/sitemap)
  *   /v2/devices/*       — device state (battery, etc.)  (misc)
+ *   /v2/guestbook/*     — public guestbook (post/list/delete)  (misc)
  *   /v2/system-data/*   — visitor logging + log viewer (misc)
  *
  * The realtime socket /v2/plural/ws is handled by the DO before the request
@@ -36,6 +37,7 @@ import { memberStatusRoutes } from "./routes/member_status";
 import { botRoutes } from "./routes/bot";
 import { staticRoutes } from "./routes/static";
 import { deviceRoutes } from "./routes/devices";
+import { guestbookRoutes } from "./routes/guestbook";
 import { systemDataRoutes } from "./routes/system_data";
 
 // One-time owner seed per DO lifetime (there is no startup phase on a Worker).
@@ -96,6 +98,7 @@ systemApp.onError((err, c) => {
 
 systemApp.route("/v2/plural", pluralApp);
 systemApp.route("/v2/devices", deviceRoutes);
+systemApp.route("/v2/guestbook", guestbookRoutes);
 systemApp.route("/v2/system-data", systemDataRoutes);
 
 systemApp.notFound((c) => c.json({ detail: "Unknown route." }, 404));

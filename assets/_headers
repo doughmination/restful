@@ -1,0 +1,6 @@
+# CORS for statically-served assets. These files are served directly by
+# Cloudflare's asset server and never hit the Worker (src/index.ts), so the
+# Worker's CORS headers don't apply — they must be set here.
+/capes/*
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, OPTIONS

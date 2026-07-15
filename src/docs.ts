@@ -384,11 +384,11 @@ var GROUPS = [
   {
     id: "devices", name: "Devices", blurb: "Latest known device state (battery, charging, low power mode, wifi).",
     endpoints: [
-      { m: "GET", path: "/devices", auth: "public", desc: "All devices → { device, level, charging, lowPowerMode, wifi, updated_at }." },
+      { m: "GET", path: "/devices", auth: "public", desc: "All devices → { device, level, charging, lowPowerMode, wifi, watch, airpods, updated_at }." },
       { m: "GET", path: "/devices/:device", auth: "public", desc: "One device, or 404." },
-      { m: "POST", path: "/devices?device=iphone&level=25&charging=1&lpm=0&wifi=Home", auth: "key",
+      { m: "POST", path: "/devices?device=iphone&level=25&charging=1&lpm=0&wifi=Home&watch=1&airpods=0", auth: "key",
         desc: "Report device state. Only 'device' is required; supplied fields are updated, the rest untouched. Send the X-Battery-Key header.",
-        params: [["device", "1–64 chars (required)."], ["level", "Optional. Integer 0–100."], ["charging", "Optional. 1 (true) or 0 (false)."], ["lpm", "Optional. 1 (true) or 0 (false) → lowPowerMode."], ["wifi", "Optional. Any string (network name), ≤128 chars."]] },
+        params: [["device", "1–64 chars (required)."], ["level", "Optional. Integer 0–100."], ["charging", "Optional. 1 (true) or 0 (false)."], ["lpm", "Optional. 1 (true) or 0 (false) → lowPowerMode."], ["wifi", "Optional. Any string (network name), ≤128 chars."], ["watch", "Optional. 1 (connected) or 0 (not connected)."], ["airpods", "Optional. 1 (connected) or 0 (not connected)."]] },
       { m: "DELETE", path: "/devices?device=iphone", auth: "key",
         desc: "Delete a device's state. Returns 404 if the device doesn't exist. Send the X-Battery-Key header.",
         params: [["device", "1–64 chars (required)."]] }

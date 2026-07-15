@@ -17,6 +17,8 @@
  *   charging — 1 (true) or 0 (false)
  *   lpm      — 1 (true) or 0 (false), stored as `lowPowerMode`
  *   wifi     — any string (the network name), 0–128 chars
+ *   watch    — 1 (connected) or 0 (not connected)
+ *   airpods  — 1 (connected) or 0 (not connected)
  */
 
 import { Hono } from "hono";
@@ -42,7 +44,7 @@ deviceRoutes.post("/", verifyBatteryAccess, async (c) => {
     return c.json({ detail: "Query param 'device' must be a string between 1 and 64 characters" }, 422);
   }
 
-  const patch: { level?: number; charging?: boolean; lowPowerMode?: boolean; wifi?: string } = {};
+  const patch: { level?: number; charging?: boolean; lowPowerMode?: boolean; wifi?: string; watch?: boolean; airpods?: boolean } = {};
 
   const levelRaw = c.req.query("level");
   if (levelRaw !== undefined) {
@@ -72,6 +74,18 @@ deviceRoutes.post("/", verifyBatteryAccess, async (c) => {
     }
     patch.wifi = wifi;
   }
+
+  const watch = parseFlag(c.req.query("watch"));
+  if (watch === null) {
+    return c.json({ detail: "Query param 'watch' must be 1 (true) or 0 (false)" }, 422);
+  }
+  if (watch !== undefined) patch.watch = watch;
+
+  const airpods = parseFlag(c.req.query("airpods"));
+  if (airpods === null) {
+    return c.json({ detail: "Query param 'airpods' must be 1 (true) or 0 (false)" }, 422);
+  }
+  if (airpods !== undefined) patch.airpods = airpods;
 
   const record = await setDeviceLevel(device, patch);
   broadcastDeviceUpdate(record);

@@ -10,6 +10,9 @@
  *   /v2/devices/*     — device state (battery, etc.) (SystemState DO)
  *   /v2/guestbook/*   — public guestbook            (SystemState DO)
  *   /v2/system-data/* — visitor logs + viewer      (SystemState DO)
+ *   /abuse, /terms, /privacy, /.well-known/security.txt — contact & legal pages
+ *   /docs, /openapi.json — API reference (HTML + OpenAPI 3.1)
+ *   /v2/health        — liveness for uptime monitors
  *
  * Two Durable Objects:
  *   GATEWAY  — singleton holding the Discord gateway socket (presence). Relays
@@ -36,6 +39,9 @@ import { getGirlsResource, isGirlsIdType } from "./girls";
 import { getMinecraftGeneral, getMinecraftHypixel, getVanillaCapeList, normalizeMcUuid, MojangUpstreamError } from "./minecraft";
 import { getContributions } from "./contribapi";
 import { DOCS_HTML } from "./docs";
+import { ABUSE_HTML, ABUSE_CONTACT, securityTxt } from "./abuse";
+import { TERMS_HTML, PRIVACY_HTML, NOT_FOUND_HTML } from "./pages";
+import { OPENAPI_JSON } from "./openapi";
 import { SystemState } from "./system/do";
 
 export { GatewayManager, SystemState };
@@ -46,10 +52,37 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// Security headers on every Worker response. HTML pages additionally get a
+// CSP: they're fully self-contained (inline style + script, /icon.png), so
+// everything else is locked down.
+const SECURITY_HEADERS = {
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+};
+const HTML_SECURITY_HEADERS = {
+  ...SECURITY_HEADERS,
+  "Content-Security-Policy":
+    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  "X-Frame-Options": "DENY",
+};
+
 function json<T>(body: ApiEnvelope<T>, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...CORS },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...CORS, ...SECURITY_HEADERS },
+  });
+}
+
+function html(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": status === 200 ? "public, max-age=3600" : "no-store",
+      ...CORS,
+      ...HTML_SECURITY_HEADERS,
+    },
   });
 }
 
@@ -160,11 +193,51 @@ export default {
 
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
-    // ---- API reference ---------------------------------------------------
-    if (path === "/docs") {
-      return new Response(DOCS_HTML, {
-        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=3600", ...CORS },
+    // ---- API reference + OpenAPI spec ------------------------------------
+    if (path === "/docs") return html(DOCS_HTML);
+    if (path === "/openapi.json") {
+      return new Response(OPENAPI_JSON, {
+        headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=3600", ...CORS, ...SECURITY_HEADERS },
       });
+    }
+
+    // ---- Abuse / terms / privacy / security contact ----------------------
+    if (path === "/abuse") return html(ABUSE_HTML);
+    if (path === "/terms") return html(TERMS_HTML);
+    if (path === "/privacy") return html(PRIVACY_HTML);
+    if (path === "/.well-known/security.txt" || path === "/security.txt") {
+      return new Response(securityTxt(url.origin), {
+        headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400", ...CORS, ...SECURITY_HEADERS },
+      });
+    }
+
+    // ---- /v2/health  (liveness for uptime monitors) ----------------------
+    // Gateway DO status + SYSTEM DO reachability in parallel. 200 when both
+    // are up and the Discord gateway socket is connected, 503 otherwise.
+    if (path === "/v2/health") {
+      const [gw, sys] = await Promise.all([
+        gatewayStub(env)
+          .fetch("https://do/status")
+          .then((r) => (r.ok ? (r.json() as Promise<{ connected: boolean; tracked: number; connected_since: number | null }>) : null))
+          .catch(() => null),
+        systemStub(env)
+          .fetch("https://do/v2/health-probe") // any response (even 404) proves the DO is up
+          .then(() => true)
+          .catch(() => false),
+      ]);
+      const ok = !!gw?.connected && sys;
+      return json(
+        {
+          success: true,
+          data: {
+            status: ok ? "ok" : "degraded",
+            gateway: gw ?? { connected: false },
+            system: sys ? "ok" : "unreachable",
+            timestamp: Date.now(),
+          },
+        } as never,
+        ok ? 200 : 503,
+      );
     }
 
     // ---- Lanyard gateway status (debug) ----------------------------------
@@ -184,6 +257,13 @@ export default {
           licence: "ESAL-2.1",
           repository_url: "https://github.com/doughmination/restful",
           docs: "/docs",
+          openapi: "/openapi.json",
+          health: "/v2/health",
+          abuse: "/abuse",
+          abuse_contact: ABUSE_CONTACT,
+          terms: "/terms",
+          privacy: "/privacy",
+          security_txt: "/.well-known/security.txt",
         },
       } as never);
     }
@@ -372,7 +452,13 @@ export default {
       return json<UnifiedRecord>({ success: true, data: buildRecord(profile, presence) });
     }
 
-    return json({ success: false, error: { code: "not_found", message: "Unknown route." } }, 404);
+    // ---- 404 --------------------------------------------------------------
+    // Browsers (Accept: text/html) get the friendly page; API clients keep
+    // the JSON error envelope.
+    if ((req.headers.get("accept") || "").includes("text/html")) {
+      return html(NOT_FOUND_HTML, 404);
+    }
+    return json({ success: false, error: { code: "not_found", message: "Unknown route. See /docs." } }, 404);
   },
 
   // Cron keepalive — keep the gateway DO connected.

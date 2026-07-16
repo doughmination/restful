@@ -31,7 +31,6 @@ import {
   collectibleSlotType,
   collectibleTypeName,
   decodeUserFlags,
-  decorationUrl,
   FLAG_BADGES,
   nameplateStaticUrl,
   nameplateVideoUrl,
@@ -62,8 +61,9 @@ export interface ProfileResult {
   wishlist: UnifiedWishlistItem[] | null;
   /** Collectibles the user has EQUIPPED (nameplate, profile frame, profile
    *  effect, avatar decoration), resolved to names + assets; null when
-   *  unavailable. */
-  collectibles_resolved: UnifiedCollectible[] | null;
+   *  unavailable. The single home for equipped collectibles — nothing is
+   *  duplicated on `user`. */
+  collectibles: UnifiedCollectible[] | null;
   /** Per-guild membership across configured tracked guilds (bot token). */
   guild_memberships: UnifiedGuildMembership[] | null;
   /** Pronouns from PronounDB. */
@@ -97,8 +97,7 @@ function buildUser(
   bio: string | null,
   pronouns: string | null,
   themeColors: number[] | null,
-  premium: UnifiedPremium | null = null,
-  profileEffectId: string | null = null
+  premium: UnifiedPremium | null = null
 ): UnifiedUser {
   const pg = u.primary_guild;
   const clan =
@@ -111,7 +110,6 @@ function buildUser(
         }
       : null;
 
-  const deco = u.avatar_decoration_data;
   const publicFlags = u.public_flags ?? u.flags ?? 0;
 
   return {
@@ -127,11 +125,7 @@ function buildUser(
     accent_color: u.accent_color ?? null,
     public_flags: publicFlags,
     flags: decodeUserFlags(publicFlags),
-    avatar_decoration: deco
-      ? { asset: deco.asset, sku_id: deco.sku_id ?? null, url: decorationUrl(deco.asset) }
-      : null,
     clan,
-    collectibles: (u.collectibles as Record<string, unknown> | null) ?? null,
     bio,
     pronouns,
     theme_colors: themeColors,
@@ -145,7 +139,6 @@ function buildUser(
         }
       : null,
     premium,
-    profile_effect_id: profileEffectId,
   };
 }
 
@@ -346,13 +339,14 @@ async function buildWishlist(
   return out;
 }
 
-// ---- equipped collectibles (profile's `collectibles` blob) --------------
-// The rich profile carries a `collectibles` map: slot -> { sku_id, … } for
-// whatever the user has EQUIPPED (nameplate, and since mid-2026 the new
-// `profile_frame`). Unlike the wishlist, the blob only has SKU ids, so we
-// resolve each via GET /collectibles-products/{sku_id} to get names + assets.
-// Written generically over the slot keys so a new collectible type surfaces
-// without a code change.
+// ---- equipped collectibles (the `collectibles` blobs) --------------------
+// The rich profile carries TWO `collectibles` maps of slot -> { sku_id, … }
+// for whatever the user has EQUIPPED: nameplates on `user.collectibles`, and
+// (since mid-2026) the new `profile_frame` on `user_profile.collectibles`.
+// Unlike the wishlist, the blobs only have SKU ids, so we resolve each via
+// GET /collectibles-products/{sku_id} to get names + assets. Written
+// generically over the slot keys so a new collectible type surfaces without
+// a code change.
 
 /** KV key for a resolved collectible product (global, shared across viewers). */
 function collectibleKey(skuId: string): string {
@@ -441,24 +435,31 @@ interface CollectibleSource {
 
 /**
  * Gather every equipped collectible SKU from a rich profile. Discord scatters
- * these across three places rather than one list:
- *   • `user.collectibles`        — nameplate, and the new `profile_frame`
+ * these across four places rather than one list:
+ *   • `user.collectibles`           — nameplate (and any future user-level slot)
+ *   • `user_profile.collectibles`   — the new `profile_frame` (profile-level)
  *   • `user.avatar_decoration_data` — the pfp decoration (has its own sku_id)
  *   • `user_profile.profile_effect` — the equipped profile effect (by id)
  * We normalise all of them to { slot, sku_id } so a single resolver handles
- * the lot. Unknown future slots in the collectibles blob pass through as-is.
+ * the lot, deduping by slot so the same equipped item never appears twice.
+ * Unknown future slots in either collectibles blob pass through as-is.
  */
 function gatherCollectibleSources(profile: RawProfileResponse): CollectibleSource[] {
   const out: CollectibleSource[] = [];
+  const seen = new Set<string>();
   const u = profile.user;
 
-  // 1) collectibles blob (nameplate, profile_frame, any future slot).
-  const blob = u?.collectibles;
-  if (blob && typeof blob === "object") {
+  // 1) collectibles blobs — nameplate on user.collectibles, profile_frame on
+  //    user_profile.collectibles, plus any future slot on either. user-level
+  //    wins if the same slot somehow shows up in both.
+  for (const blob of [u?.collectibles, profile.user_profile?.collectibles]) {
+    if (!blob || typeof blob !== "object") continue;
     for (const [slot, vRaw] of Object.entries(blob)) {
+      if (seen.has(slot)) continue;
       if (!vRaw || typeof vRaw !== "object") continue;
       const v = vRaw as Record<string, any>;
       if (typeof v.sku_id !== "string") continue;
+      seen.add(slot);
       out.push({
         slot,
         sku_id: v.sku_id,
@@ -470,9 +471,12 @@ function gatherCollectibleSources(profile: RawProfileResponse): CollectibleSourc
     }
   }
 
-  // 2) avatar decoration (pfp frame) — top-level user object.
+  // 2) avatar decoration (pfp frame) — top-level user object. Lives under the
+  //    unified collectibles list like everything else (skipped if a blob
+  //    already provided the slot, so it's never repeated).
   const deco = u?.avatar_decoration_data;
-  if (deco && typeof deco.sku_id === "string" && deco.sku_id) {
+  if (deco && typeof deco.sku_id === "string" && deco.sku_id && !seen.has("avatar_decoration")) {
+    seen.add("avatar_decoration");
     out.push({
       slot: "avatar_decoration",
       sku_id: deco.sku_id,
@@ -485,7 +489,7 @@ function gatherCollectibleSources(profile: RawProfileResponse): CollectibleSourc
   //    (which replaced the old /user-profile-effects route). If the id isn't a
   //    resolvable SKU the entry still surfaces, typed from its slot.
   const effId = profile.user_profile?.profile_effect?.id;
-  if (typeof effId === "string" && effId) {
+  if (typeof effId === "string" && effId && !seen.has("profile_effect")) {
     out.push({ slot: "profile_effect", sku_id: effId });
   }
 
@@ -648,11 +652,10 @@ async function buildFreshProfile(
     }));
 
     const premium = buildPremium(profile);
-    const profileEffectId = profile.user_profile?.profile_effect?.id ?? null;
 
     // Fetch everything that doesn't depend on the profile body in parallel.
     // Wishlist + equipped collectibles need the profile, so they run alongside.
-    const [wishlist, collectiblesResolved, clientBadges, memberships, pronoundb, timezone, reviews] =
+    const [wishlist, collectibles, clientBadges, memberships, pronoundb, timezone, reviews] =
       await Promise.all([
         buildWishlist(env, profile, ctx, force),
         buildCollectibles(env, profile, ctx, force),
@@ -666,12 +669,12 @@ async function buildFreshProfile(
     return {
       result: {
         // Prefer PronounDB pronouns when Discord's own profile has none.
-        user: buildUser(u, bio, pronouns ?? pronoundb, themeColors, premium, profileEffectId),
+        user: buildUser(u, bio, pronouns ?? pronoundb, themeColors, premium),
         badges,
         clientBadges,
         connected_accounts: connected,
         wishlist,
-        collectibles_resolved: collectiblesResolved,
+        collectibles,
         guild_memberships: memberships,
         pronoundb,
         timezone,
@@ -683,12 +686,16 @@ async function buildFreshProfile(
     };
   }
 
-  // Bot-only fallback — the wishlist + equipped collectibles ride on the rich
-  // profile, which we don't have here, so they're null. Third-party sources +
-  // memberships don't need the user token, so we still fetch those.
+  // Bot-only fallback — the wishlist rides on the rich profile, which we don't
+  // have here, so it's null. The bot /users/:id payload still carries the
+  // avatar decoration + user-level collectibles blob (nameplate), so equipped
+  // collectibles are resolved from that; profile_frame/profile_effect need the
+  // rich profile and won't appear. Third-party sources + memberships don't
+  // need the user token, so we still fetch those.
   const u = await fetchBotUser(env, id);
   if (!u) return { result: null, richStatus, retryAfter };
-  const [clientBadges, memberships, pronoundb, timezone, reviews] = await Promise.all([
+  const [collectibles, clientBadges, memberships, pronoundb, timezone, reviews] = await Promise.all([
+    buildCollectibles(env, { user: u }, ctx, force).catch(() => null),
     getClientBadges(env, id, ctx, force),
     getMemberships(env, id, ctx, force).catch(() => null),
     getPronouns(env, id, ctx, force).catch(() => null),
@@ -702,7 +709,7 @@ async function buildFreshProfile(
       clientBadges,
       connected_accounts: [],
       wishlist: null,
-      collectibles_resolved: null,
+      collectibles,
       guild_memberships: memberships,
       pronoundb,
       timezone,

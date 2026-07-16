@@ -92,12 +92,6 @@ export interface UnifiedGuildInvite {
   online_count: number | null;
 }
 
-export interface UnifiedAvatarDecoration {
-  asset: string;
-  sku_id: string | null;
-  url: string;
-}
-
 export interface UnifiedClanTag {
   guild_id: string;
   tag: string;
@@ -164,10 +158,11 @@ export type WishlistItemType =
   | "unknown";
 
 /**
- * One collectible a user has EQUIPPED on their profile, resolved from the
- * `collectibles` blob on the (rich) profile. Discord returns that blob as a map
- * of slot -> { sku_id, ... } (e.g. `nameplate`, and — since mid-2026 — the new
- * `profile_frame` Shop collectible). We resolve each slot's SKU via
+ * One collectible a user has EQUIPPED on their profile. Discord scatters these
+ * across the rich profile: nameplates on `user.collectibles`, profile frames on
+ * `user_profile.collectibles` (both maps of slot -> { sku_id, ... }), and the
+ * avatar decoration on `user.avatar_decoration_data` — all folded in here (and
+ * only here). We resolve each slot's SKU via
  * GET /collectibles-products/{sku_id} to get its name + image assets, so the
  * frontend can render whatever the user is wearing without knowing the slot
  * names ahead of time. Forward-compatible: an unrecognised slot still resolves.
@@ -266,10 +261,7 @@ export interface UnifiedUser {
   /** Decoded public flags (badge and non-badge), incl. any new/unknown ones. */
   flags: UnifiedFlag[];
 
-  avatar_decoration: UnifiedAvatarDecoration | null;
   clan: UnifiedClanTag | null;
-  /** Raw collectibles blob (nameplate, etc.) passed through as-is. */
-  collectibles: Record<string, unknown> | null;
 
   /** Rich profile only (needs user token); null otherwise. */
   bio: string | null;
@@ -280,8 +272,6 @@ export interface UnifiedUser {
   display_name_styles: UnifiedDisplayNameStyles | null;
   /** Nitro/premium subscription state (tier + since dates). Rich profile only. */
   premium: UnifiedPremium | null;
-  /** Equipped profile effect (Shop collectible) id; null if none. */
-  profile_effect_id: string | null;
 }
 
 export interface UnifiedDisplayNameStyles {
@@ -390,10 +380,12 @@ export interface UnifiedRecord {
    *  [] means we reached the source and the wishlist is empty. */
   wishlist: UnifiedWishlistItem[] | null;
   /** Collectibles the user has EQUIPPED (nameplate, profile frame, profile
-   *  effect, avatar decoration), resolved to names + image assets.
+   *  effect, avatar decoration), resolved to names + image assets. The ONLY
+   *  place equipped collectibles appear — the raw per-slot blobs are folded in
+   *  here rather than duplicated on `user`.
    *  null when unavailable (no user token, or the source was blocked);
    *  [] means the profile was reachable but nothing is equipped. */
-  collectibles_resolved: UnifiedCollectible[] | null;
+  collectibles: UnifiedCollectible[] | null;
   /** Per-guild membership across configured tracked guilds. null when not
    *  configured/unavailable; [] when the user is in none of them. */
   guild_memberships: UnifiedGuildMembership[] | null;

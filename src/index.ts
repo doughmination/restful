@@ -123,7 +123,7 @@ function buildRecord(
     clientBadges: profile.clientBadges,
     connected_accounts: profile.connected_accounts,
     wishlist: profile.wishlist ?? null,
-    collectibles_resolved: profile.collectibles_resolved ?? null,
+    collectibles: profile.collectibles ?? null,
     guild_memberships: profile.guild_memberships ?? null,
     pronoundb: profile.pronoundb ?? null,
     timezone: profile.timezone ?? null,

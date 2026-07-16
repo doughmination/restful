@@ -132,6 +132,9 @@ export interface RawProfileResponse {
     theme_colors?: number[] | null;
     /** Equipped profile effect (Shop collectible). */
     profile_effect?: { id?: string | null } | null;
+    /** Profile-scoped collectibles blob — this is where `profile_frame`
+     *  lives (nameplates sit on `user.collectibles` instead). */
+    collectibles?: Record<string, unknown> | null;
   };
   badges?: RawProfileBadge[];
   connected_accounts?: Array<{ type: string; id: string; name: string; verified: boolean }>;

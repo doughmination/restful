@@ -16,7 +16,7 @@
  *   level    — integer 0–100
  *   charging — 1 (true) or 0 (false)
  *   lpm      — 1 (true) or 0 (false), stored as `lowPowerMode`
- *   wifi     — any string (the network name), 0–128 chars
+ *   wifi     — the network name (1–128 chars); pass 0 to clear it (stored as null)
  *   watch    — 1 (connected) or 0 (not connected)
  *   airpods  — 1 (connected) or 0 (not connected)
  */
@@ -44,7 +44,7 @@ deviceRoutes.post("/", verifyBatteryAccess, async (c) => {
     return c.json({ detail: "Query param 'device' must be a string between 1 and 64 characters" }, 422);
   }
 
-  const patch: { level?: number; charging?: boolean; lowPowerMode?: boolean; wifi?: string; watch?: boolean; airpods?: boolean } = {};
+  const patch: { level?: number; charging?: boolean; lowPowerMode?: boolean; wifi?: string | null; watch?: boolean; airpods?: boolean } = {};
 
   const levelRaw = c.req.query("level");
   if (levelRaw !== undefined) {
@@ -69,10 +69,14 @@ deviceRoutes.post("/", verifyBatteryAccess, async (c) => {
 
   const wifi = c.req.query("wifi");
   if (wifi !== undefined) {
-    if (wifi.length > 128) {
-      return c.json({ detail: "Query param 'wifi' must be 128 characters or fewer" }, 422);
+    if (wifi === "0") {
+      patch.wifi = null;
+    } else {
+      if (wifi.length > 128) {
+        return c.json({ detail: "Query param 'wifi' must be 128 characters or fewer" }, 422);
+      }
+      patch.wifi = wifi;
     }
-    patch.wifi = wifi;
   }
 
   const watch = parseFlag(c.req.query("watch"));

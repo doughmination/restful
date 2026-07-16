@@ -12,7 +12,7 @@ interface DeviceRecord {
   level?: number;
   charging?: boolean;
   lowPowerMode?: boolean;
-  wifi?: string;
+  wifi?: string | null;
   watch?: boolean;
   airpods?: boolean;
   updated_at: string;

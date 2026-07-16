@@ -2,8 +2,9 @@
  * profile.ts — build the UnifiedUser + badges + connections.
  *
  * Combines the bot-token /users/:id (basic) with the optional user-token
- * /users/:id/profile (rich), merges badges, and caches the result in KV
- * because none of this comes over the gateway.
+ * /users/:id/profile (rich) and merges badges. Fetched live on every request
+ * (no profile-level cache); only a short 429 cooldown is persisted so a rich
+ * rate-limit doesn't get the user tokens hammered.
  * ===================================================================== */
 
 import type {
@@ -12,8 +13,6 @@ import type {
   UnifiedClientBadge,
   UnifiedConnectedAccount,
   UnifiedGuildMembership,
-  UnifiedMutualFriend,
-  UnifiedMutualGuild,
   UnifiedPremium,
   UnifiedReviews,
   UnifiedCollectible,
@@ -34,7 +33,6 @@ import {
   decodeUserFlags,
   decorationUrl,
   FLAG_BADGES,
-  guildIconUrl,
   nameplateStaticUrl,
   nameplateVideoUrl,
   premiumTypeName,
@@ -42,14 +40,11 @@ import {
 import {
   fetchBotUser,
   fetchCollectibleProduct,
-  fetchGuildBasic,
   fetchUserProfile,
   fetchWishlist,
   type RawCollectibleItem,
   type RawCollectibleProduct,
   type RawDiscordUser,
-  type RawMutualFriend,
-  type RawMutualGuild,
   type RawProfileResponse,
 } from "./discord/rest";
 import { getMemberships } from "./memberships";
@@ -65,14 +60,10 @@ export interface ProfileResult {
   connected_accounts: UnifiedConnectedAccount[];
   /** Shop collectibles saved to the profile; null when unavailable. */
   wishlist: UnifiedWishlistItem[] | null;
-  /** Collectibles the user has EQUIPPED (nameplate, profile frame, …),
-   *  resolved to names + assets; null when unavailable. */
+  /** Collectibles the user has EQUIPPED (nameplate, profile frame, profile
+   *  effect, avatar decoration), resolved to names + assets; null when
+   *  unavailable. */
   collectibles_resolved: UnifiedCollectible[] | null;
-  /** Guilds shared with the userbot account (rich profile). */
-  mutual_guilds: UnifiedMutualGuild[] | null;
-  /** Friends shared with the userbot account (rich profile). */
-  mutual_friends: UnifiedMutualFriend[] | null;
-  mutual_friends_count: number | null;
   /** Per-guild membership across configured tracked guilds (bot token). */
   guild_memberships: UnifiedGuildMembership[] | null;
   /** Pronouns from PronounDB. */
@@ -81,7 +72,7 @@ export interface ProfileResult {
   timezone: UnifiedTimezone | null;
   /** ReviewDB reviews/reputation. */
   reviews: UnifiedReviews | null;
-  source: "bot" | "user" | "cache";
+  source: "bot" | "user";
 }
 
 function flagBadges(flags: number): UnifiedBadge[] {
@@ -171,58 +162,6 @@ function buildPremium(profile: RawProfileResponse): UnifiedPremium | null {
     since: profile.premium_since ?? null,
     guild_since: profile.premium_guild_since ?? null,
   };
-}
-
-/** Resolve mutual guilds (needs a per-guild name/icon lookup, cached). */
-async function buildMutualGuilds(
-  env: Env,
-  raw: RawMutualGuild[] | null | undefined,
-  ctx?: ExecutionContext
-): Promise<UnifiedMutualGuild[] | null> {
-  if (!Array.isArray(raw)) return null;
-  const out: UnifiedMutualGuild[] = [];
-  for (const g of raw) {
-    if (!g || !g.id) continue;
-    // Reuse the membership guildmeta cache shape by fetching basic guild info.
-    let name: string | null = null;
-    let icon_url: string | null = null;
-    const key = `guildmeta:${g.id}`;
-    const cached = (await env.PROFILE_CACHE.get(key, "json")) as
-      | { name: string | null; icon_url: string | null }
-      | null;
-    if (cached) {
-      name = cached.name;
-      icon_url = cached.icon_url;
-    } else {
-      const info = await fetchGuildBasic(env, g.id);
-      if (info) {
-        name = info.name;
-        icon_url = guildIconUrl(g.id, info.icon);
-        const write = env.PROFILE_CACHE.put(
-          key,
-          JSON.stringify({ name, icon_url }),
-          { expirationTtl: 21600 }
-        );
-        if (ctx) ctx.waitUntil(write);
-        else await write;
-      }
-    }
-    out.push({ id: g.id, nick: g.nick ?? null, name, icon_url });
-  }
-  return out;
-}
-
-/** Map mutual friends to the unified shape. */
-function buildMutualFriends(raw: RawMutualFriend[] | null | undefined): UnifiedMutualFriend[] | null {
-  if (!Array.isArray(raw)) return null;
-  return raw
-    .filter((f) => f && f.id)
-    .map((f) => ({
-      id: f.id,
-      username: f.username,
-      global_name: f.global_name ?? null,
-      avatar_url: avatarUrl(f.id, f.avatar ?? null),
-    }));
 }
 
 // ---- wishlist (profile's wishlist_settings key is a WISHLIST id) ---------
@@ -474,11 +413,11 @@ function collectibleImages(
       // nameplate — still PNG + WEBM under /assets/collectibles/
       stat = nameplateStaticUrl(asset);
       vid = nameplateVideoUrl(asset);
-    } else if (type === 0 && asset) {
-      // avatar decoration — APNG served at .png
+    } else if ((type === 0 || slot === "avatar_decoration") && asset) {
+      // avatar decoration (pfp) — APNG served at .png
       stat = avatarDecorationImageUrl(asset);
       anim = avatarDecorationImageUrl(asset);
-    } else if (type === 1) {
+    } else if (type === 1 || slot === "profile_effect") {
       // profile effect — image fields are full URLs on the item itself
       stat = item?.staticFrameSrc ?? item?.thumbnailPreviewSrc ?? null;
       anim = item?.thumbnailPreviewSrc ?? item?.reducedMotionSrc ?? null;
@@ -489,32 +428,91 @@ function collectibleImages(
   return { static_image_url: stat, animated_image_url: anim, video_url: vid };
 }
 
+/** One equipped-collectible SKU to resolve, gathered from the rich profile.
+ *  A slot's data may bring its own asset/label/palette we can fall back on. */
+interface CollectibleSource {
+  slot: string;
+  sku_id: string;
+  asset?: string;
+  label?: string | null;
+  palette?: string | null;
+  expires_at?: number | null;
+}
+
 /**
- * Build the equipped-collectibles list from the rich profile's `collectibles`
- * blob. Iterates every slot with a `sku_id`, resolves the product, and maps it
- * to a UnifiedCollectible. Returns null when the blob is absent (so a bot-only
- * refresh keeps the cached list); [] when the profile has no equipped
- * collectibles. A per-item product-lookup failure still emits an entry built
- * from the blob's own fields rather than dropping the equipped item.
+ * Gather every equipped collectible SKU from a rich profile. Discord scatters
+ * these across three places rather than one list:
+ *   • `user.collectibles`        — nameplate, and the new `profile_frame`
+ *   • `user.avatar_decoration_data` — the pfp decoration (has its own sku_id)
+ *   • `user_profile.profile_effect` — the equipped profile effect (by id)
+ * We normalise all of them to { slot, sku_id } so a single resolver handles
+ * the lot. Unknown future slots in the collectibles blob pass through as-is.
+ */
+function gatherCollectibleSources(profile: RawProfileResponse): CollectibleSource[] {
+  const out: CollectibleSource[] = [];
+  const u = profile.user;
+
+  // 1) collectibles blob (nameplate, profile_frame, any future slot).
+  const blob = u?.collectibles;
+  if (blob && typeof blob === "object") {
+    for (const [slot, vRaw] of Object.entries(blob)) {
+      if (!vRaw || typeof vRaw !== "object") continue;
+      const v = vRaw as Record<string, any>;
+      if (typeof v.sku_id !== "string") continue;
+      out.push({
+        slot,
+        sku_id: v.sku_id,
+        asset: typeof v.asset === "string" ? v.asset : undefined,
+        label: typeof v.label === "string" ? v.label : null,
+        palette: typeof v.palette === "string" ? v.palette : null,
+        expires_at: typeof v.expires_at === "number" ? v.expires_at : null,
+      });
+    }
+  }
+
+  // 2) avatar decoration (pfp frame) — top-level user object.
+  const deco = u?.avatar_decoration_data;
+  if (deco && typeof deco.sku_id === "string" && deco.sku_id) {
+    out.push({
+      slot: "avatar_decoration",
+      sku_id: deco.sku_id,
+      asset: typeof deco.asset === "string" ? deco.asset : undefined,
+    });
+  }
+
+  // 3) equipped profile effect — user_profile.profile_effect.id. Discord only
+  //    hands back the id here; we resolve it against collectibles-products
+  //    (which replaced the old /user-profile-effects route). If the id isn't a
+  //    resolvable SKU the entry still surfaces, typed from its slot.
+  const effId = profile.user_profile?.profile_effect?.id;
+  if (typeof effId === "string" && effId) {
+    out.push({ slot: "profile_effect", sku_id: effId });
+  }
+
+  return out;
+}
+
+/**
+ * Build the equipped-collectibles list from a rich profile. Resolves each
+ * gathered SKU (nameplate, profile frame, pfp decoration, profile effect) via
+ * GET /collectibles-products/{sku_id} to names + image assets. Returns null
+ * when there's no rich profile to read from; [] when nothing is equipped. A
+ * per-item product-lookup failure still emits an entry built from the source's
+ * own fields rather than dropping the equipped item.
  */
 async function buildCollectibles(
   env: Env,
-  rawCollectibles: Record<string, unknown> | null | undefined,
+  profile: RawProfileResponse | null | undefined,
   ctx?: ExecutionContext,
   force = false
 ): Promise<UnifiedCollectible[] | null> {
-  if (!rawCollectibles || typeof rawCollectibles !== "object") return null;
-  const entries = Object.entries(rawCollectibles).filter(
-    ([, v]) => v && typeof v === "object"
-  );
-  if (!entries.length) return [];
+  if (!profile) return null;
+  const sources = gatherCollectibleSources(profile);
+  if (!sources.length) return [];
 
   const out: UnifiedCollectible[] = [];
-  for (const [slot, vRaw] of entries) {
-    const v = vRaw as Record<string, any>;
-    const skuId = typeof v.sku_id === "string" ? v.sku_id : null;
-    if (!skuId) continue;
-
+  for (const src of sources) {
+    const { slot, sku_id: skuId } = src;
     const product = await getCollectibleProduct(env, skuId, ctx, force);
     const item = pickCollectibleItem(product, slot);
 
@@ -527,11 +525,7 @@ async function buildCollectibles(
     let kind = collectibleTypeName(typeId);
     if (kind === "unknown") kind = collectibleSlotType(slot);
 
-    const images = collectibleImages(
-      item,
-      slot,
-      typeof v.asset === "string" ? v.asset : undefined
-    );
+    const images = collectibleImages(item, slot, src.asset);
 
     out.push({
       slot,
@@ -540,48 +534,30 @@ async function buildCollectibles(
       type_id: typeId,
       name: product?.name ?? item?.title ?? null,
       summary: product?.summary ?? item?.description ?? null,
-      label:
-        (typeof v.label === "string" ? v.label : null) ??
-        item?.label ??
-        item?.accessibilityLabel ??
-        null,
+      label: src.label ?? item?.label ?? item?.accessibilityLabel ?? null,
       ...images,
       palette:
-        typeof v.palette === "string"
-          ? v.palette
-          : typeof item?.palette === "string"
-          ? item.palette
-          : null,
-      expires_at: typeof v.expires_at === "number" ? v.expires_at : null,
+        src.palette ?? (typeof item?.palette === "string" ? item.palette : null),
+      expires_at: src.expires_at ?? null,
     });
   }
   return out;
 }
 
-function cacheKey(id: string): string {
-  return `profile:${id}`;
-}
-
-/** Base profile freshness window (seconds). Profiles change rarely, so this is
- *  long by default; override via PROFILE_CACHE_TTL_SECONDS. */
-function baseTtl(env: Env): number {
-  return Math.max(60, Number(env.PROFILE_CACHE_TTL_SECONDS || "300"));
-}
-
-type CachedProfile = Omit<ProfileResult, "source">;
+/** Global KV key holding the timestamp until which rich fetches are paused. */
+const COOLDOWN_KEY = "profile:rich-cooldown";
 
 /**
- * Get a user's profile — CACHE-FIRST, with a bot+user merge fallback.
+ * Get a user's profile — ALWAYS FRESH (no profile-level caching). The full
+ * profile is fetched live on every request so the data is never stale. The one
+ * thing we still persist is a short 429 cooldown: if the user-token /profile
+ * endpoint rate-limits us, we pause the rich attempt for a bit (falling back to
+ * bot-only) rather than hammering it every request until the tokens get banned.
  *
- * Profiles change rarely and Discord rate-limits the user-token /profile
- * endpoint hard, so we serve a cached rich profile for PROFILE_CACHE_TTL_SECONDS
- * before bothering Discord again — this is what stops the rate-limiting.
- *
- * When a refresh CAN only reach the bot token (the rich call got 429'd/blocked),
- * we don't downgrade: we keep the fresh bot base and layer the cached rich
- * fields (theme_colors, display_name_styles, bio, pronouns, rich badges +
- * connections) back over it — "use both at once" — so those never vanish during
- * a rate-limit window. Presence is unaffected; it streams from the gateway DO.
+ * Sub-resource lookups (collectible products, wishlist items) keep their own
+ * short caches — those are stable, shared, global data, not per-user profile
+ * state — so "always fresh" doesn't mean re-downloading the whole shop catalogue
+ * on every hit. Presence is unaffected; it streams from the gateway DO.
  */
 export async function getProfile(
   env: Env,
@@ -589,26 +565,12 @@ export async function getProfile(
   ctx?: ExecutionContext,
   force = false
 ): Promise<ProfileResult | null> {
-  const got = await env.PROFILE_CACHE.getWithMetadata(cacheKey(id), "json");
-  const cached = (got.value as CachedProfile | null) ?? null;
-  const meta = got.metadata as { t?: number; ttl?: number } | null;
-  const lastWrite = meta?.t ?? 0;
-  // Per-entry TTL is jittered at write time so a big batch of profiles doesn't
-  // all go stale on the same tick and stampede the rich refresh.
-  const entryTtlMs = (meta?.ttl ?? baseTtl(env)) * 1000;
-  // `force` (?fresh=1) treats the cache as stale so we re-fetch + re-resolve.
-  const cacheFresh = !force && !!cached && Date.now() - lastWrite < entryTtlMs;
-
-  // 1) Fresh rich cache -> serve it without touching Discord at all.
-  if (cached && cacheFresh) return { ...cached, source: "cache" };
-
-  // 2) Cache stale or missing -> fetch live. Skip the rich (user-token) attempt
-  //    while we're in a 429 cooldown so the rate-limit window can clear instead
-  //    of us hammering it on every request and never recovering.
+  // Skip the rich (user-token) attempt while we're in a 429 cooldown so the
+  // rate-limit window can clear instead of us re-triggering it every request.
   const cdRaw = await env.PROFILE_CACHE.get(COOLDOWN_KEY);
   const tryRich = !(cdRaw && Date.now() < Number(cdRaw));
 
-  const { result: built, richStatus, retryAfter } = await buildFreshProfile(env, id, tryRich, ctx, force);
+  const { result, richStatus, retryAfter } = await buildFreshProfile(env, id, tryRich, ctx, force);
 
   if (richStatus === 429) {
     // back off all rich attempts for a while (honour Retry-After, clamp 30s–5m)
@@ -620,96 +582,7 @@ export async function getProfile(
     else await write;
   }
 
-  if (built && built.source === "user") {
-    // Don't clobber a cached wishlist with null if this refresh got the profile
-    // but not the wishlist (e.g. it 429'd). An empty [] still overwrites.
-    if (built.wishlist == null && cached?.wishlist != null) {
-      built.wishlist = cached.wishlist;
-    }
-    // Same for equipped collectibles — a 429 on the product lookups shouldn't
-    // wipe a previously resolved list.
-    if (built.collectibles_resolved == null && cached?.collectibles_resolved != null) {
-      built.collectibles_resolved = cached.collectibles_resolved;
-    }
-    const write = writeCache(env, id, built);
-    if (ctx) ctx.waitUntil(write);
-    else await write;
-    return built;
-  }
-
-  if (built && built.source === "bot") {
-    // Rich fetch skipped/degraded: fresh bot base + cached rich extras.
-    if (cached) return { ...mergeRichOverBot(cached, built), source: "cache" };
-    return built; // nothing cached yet — bot-only is the best we have
-  }
-
-  // 3) Discord gave us nothing — serve stale cache if present.
-  if (cached) return { ...cached, source: "cache" };
-  return null;
-}
-
-/** Global KV key holding the timestamp until which rich fetches are paused. */
-const COOLDOWN_KEY = "profile:rich-cooldown";
-
-/** Layer the rich-only fields from cache over a fresh bot-token result. */
-function mergeRichOverBot(cached: CachedProfile, bot: ProfileResult): CachedProfile {
-  return {
-    user: {
-      ...bot.user,
-      bio: cached.user.bio,
-      pronouns: cached.user.pronouns ?? bot.user.pronouns,
-      theme_colors: cached.user.theme_colors,
-      display_name_styles: cached.user.display_name_styles,
-      premium: cached.user.premium,
-      profile_effect_id: cached.user.profile_effect_id,
-    },
-    badges: cached.badges.length ? cached.badges : bot.badges,
-    clientBadges: bot.clientBadges != null ? bot.clientBadges : cached.clientBadges,
-    connected_accounts: cached.connected_accounts.length
-      ? cached.connected_accounts
-      : bot.connected_accounts,
-    // Bot-only refreshes can't read the wishlist / mutuals (they ride on the
-    // rich profile), so keep the cached ones rather than dropping to null.
-    wishlist: bot.wishlist != null ? bot.wishlist : cached.wishlist,
-    // Equipped collectibles ride on the rich profile too — keep the cached list.
-    collectibles_resolved:
-      bot.collectibles_resolved != null ? bot.collectibles_resolved : cached.collectibles_resolved,
-    mutual_guilds: cached.mutual_guilds,
-    mutual_friends: cached.mutual_friends,
-    mutual_friends_count: cached.mutual_friends_count,
-    // These don't need the user token, so a fresh bot refresh has current data.
-    guild_memberships: bot.guild_memberships ?? cached.guild_memberships,
-    pronoundb: bot.pronoundb ?? cached.pronoundb,
-    timezone: bot.timezone ?? cached.timezone,
-    reviews: bot.reviews ?? cached.reviews,
-  };
-}
-
-/** Persist a rich profile so it can drive cache-hits and bot-merge fallbacks. */
-async function writeCache(env: Env, id: string, result: ProfileResult): Promise<void> {
-  // Jitter the freshness window ±20% so entries refresh staggered, not in a burst.
-  const jitteredTtl = Math.round(baseTtl(env) * (0.8 + Math.random() * 0.4));
-  await env.PROFILE_CACHE.put(
-    cacheKey(id),
-    JSON.stringify({
-      user: result.user,
-      badges: result.badges,
-      clientBadges: result.clientBadges,
-      connected_accounts: result.connected_accounts,
-      wishlist: result.wishlist,
-      collectibles_resolved: result.collectibles_resolved,
-      mutual_guilds: result.mutual_guilds,
-      mutual_friends: result.mutual_friends,
-      mutual_friends_count: result.mutual_friends_count,
-      guild_memberships: result.guild_memberships,
-      pronoundb: result.pronoundb,
-      timezone: result.timezone,
-      reviews: result.reviews,
-    }),
-    // Keep the rich blob ~24h so it's available to merge over bot data even
-    // when it's well past its freshness window.
-    { expirationTtl: 86400, metadata: { t: Date.now(), ttl: jitteredTtl } }
-  );
+  return result;
 }
 
 interface BuildResult {
@@ -778,26 +651,17 @@ async function buildFreshProfile(
     const profileEffectId = profile.user_profile?.profile_effect?.id ?? null;
 
     // Fetch everything that doesn't depend on the profile body in parallel.
-    // Wishlist + mutual guilds need the profile, so they run alongside.
-    const [
-      wishlist,
-      collectiblesResolved,
-      clientBadges,
-      mutualGuilds,
-      memberships,
-      pronoundb,
-      timezone,
-      reviews,
-    ] = await Promise.all([
-      buildWishlist(env, profile, ctx, force),
-      buildCollectibles(env, u.collectibles as Record<string, unknown> | null, ctx, force),
-      getClientBadges(env, id, ctx, force),
-      buildMutualGuilds(env, profile.mutual_guilds, ctx),
-      getMemberships(env, id, ctx, force).catch(() => null),
-      getPronouns(env, id, ctx, force).catch(() => null),
-      getTimezone(env, id, ctx, force).catch(() => null),
-      getReviews(env, id, ctx, force).catch(() => null),
-    ]);
+    // Wishlist + equipped collectibles need the profile, so they run alongside.
+    const [wishlist, collectiblesResolved, clientBadges, memberships, pronoundb, timezone, reviews] =
+      await Promise.all([
+        buildWishlist(env, profile, ctx, force),
+        buildCollectibles(env, profile, ctx, force),
+        getClientBadges(env, id, ctx, force),
+        getMemberships(env, id, ctx, force).catch(() => null),
+        getPronouns(env, id, ctx, force).catch(() => null),
+        getTimezone(env, id, ctx, force).catch(() => null),
+        getReviews(env, id, ctx, force).catch(() => null),
+      ]);
 
     return {
       result: {
@@ -808,12 +672,6 @@ async function buildFreshProfile(
         connected_accounts: connected,
         wishlist,
         collectibles_resolved: collectiblesResolved,
-        mutual_guilds: mutualGuilds,
-        mutual_friends: buildMutualFriends(profile.mutual_friends),
-        mutual_friends_count:
-          typeof profile.mutual_friends_count === "number"
-            ? profile.mutual_friends_count
-            : buildMutualFriends(profile.mutual_friends)?.length ?? null,
         guild_memberships: memberships,
         pronoundb,
         timezone,
@@ -825,10 +683,9 @@ async function buildFreshProfile(
     };
   }
 
-  // Bot-only fallback — the wishlist + mutuals ride on the rich profile, which
-  // we don't have here, so they're null and the cache-merge keeps any
-  // previously cached ones. Third-party sources + memberships don't need the
-  // user token, so we still fetch those.
+  // Bot-only fallback — the wishlist + equipped collectibles ride on the rich
+  // profile, which we don't have here, so they're null. Third-party sources +
+  // memberships don't need the user token, so we still fetch those.
   const u = await fetchBotUser(env, id);
   if (!u) return { result: null, richStatus, retryAfter };
   const [clientBadges, memberships, pronoundb, timezone, reviews] = await Promise.all([
@@ -846,9 +703,6 @@ async function buildFreshProfile(
       connected_accounts: [],
       wishlist: null,
       collectibles_resolved: null,
-      mutual_guilds: null,
-      mutual_friends: null,
-      mutual_friends_count: null,
       guild_memberships: memberships,
       pronoundb,
       timezone,

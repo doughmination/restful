@@ -43,7 +43,6 @@ export interface Env {
 
   DISCORD_API_VERSION?: string;
   TRACKED_GUILD_IDS?: string;
-  PROFILE_CACHE_TTL_SECONDS?: string;
   DISCORD_CLIENT_BUILD_NUMBER?: string;
 
   /** Guild id for the /v1/girls/:idType/:id lookups (e.g. your "Girls" server). */
@@ -328,23 +327,6 @@ export interface UnifiedPresence {
   updated_at: number;
 }
 
-/** A guild shared between the looked-up user and the userbot account. */
-export interface UnifiedMutualGuild {
-  id: string;
-  /** The user's nickname in that guild, when Discord returns one. */
-  nick: string | null;
-  name: string | null;
-  icon_url: string | null;
-}
-
-/** A friend shared between the looked-up user and the userbot account. */
-export interface UnifiedMutualFriend {
-  id: string;
-  username: string;
-  global_name: string | null;
-  avatar_url: string;
-}
-
 /** Per-guild membership for a user in one tracked guild (bot-token data). */
 export interface UnifiedGuildMembership {
   guild_id: string;
@@ -407,18 +389,11 @@ export interface UnifiedRecord {
    *  null when unavailable (no user token / proxy, or the source was blocked);
    *  [] means we reached the source and the wishlist is empty. */
   wishlist: UnifiedWishlistItem[] | null;
-  /** Collectibles the user has EQUIPPED (nameplate, profile frame, …), resolved
-   *  from the rich profile's `collectibles` blob to names + image assets.
+  /** Collectibles the user has EQUIPPED (nameplate, profile frame, profile
+   *  effect, avatar decoration), resolved to names + image assets.
    *  null when unavailable (no user token, or the source was blocked);
    *  [] means the profile was reachable but nothing is equipped. */
   collectibles_resolved: UnifiedCollectible[] | null;
-  /** Guilds shared with the userbot account (rich profile, with_mutual_guilds).
-   *  null when unavailable; [] when none. */
-  mutual_guilds: UnifiedMutualGuild[] | null;
-  /** Friends shared with the userbot account. null unavailable; [] none. */
-  mutual_friends: UnifiedMutualFriend[] | null;
-  /** Count of mutual friends as Discord reports it (may exceed the list length). */
-  mutual_friends_count: number | null;
   /** Per-guild membership across configured tracked guilds. null when not
    *  configured/unavailable; [] when the user is in none of them. */
   guild_memberships: UnifiedGuildMembership[] | null;
@@ -431,7 +406,7 @@ export interface UnifiedRecord {
   updated_at: number;
   source: {
     presence: "gateway" | "none";
-    profile: "bot" | "user" | "cache";
+    profile: "bot" | "user";
   };
 }
 

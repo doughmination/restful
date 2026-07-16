@@ -116,20 +116,6 @@ export interface RawDiscordUser {
   } | null;
 }
 
-/** A guild entry from the rich profile's `mutual_guilds` array. */
-export interface RawMutualGuild {
-  id: string;
-  nick?: string | null;
-}
-
-/** A friend entry from the rich profile's `mutual_friends` array. */
-export interface RawMutualFriend {
-  id: string;
-  username: string;
-  global_name?: string | null;
-  avatar?: string | null;
-}
-
 export interface RawProfileBadge {
   id: string;
   description: string;
@@ -153,11 +139,6 @@ export interface RawProfileResponse {
   premium_since?: string | null;
   premium_guild_since?: string | null;
   legacy_username?: string | null;
-  /** Guilds shared with the token account (with_mutual_guilds=true). */
-  mutual_guilds?: RawMutualGuild[] | null;
-  /** Friends shared with the token account (with_mutual_friends=true). */
-  mutual_friends?: RawMutualFriend[] | null;
-  mutual_friends_count?: number | null;
   /** Profile wishlist: map of WISHLIST id -> per-wishlist settings. The items
    *  themselves are NOT here — fetch them with fetchWishlist(wishlistId). */
   wishlist_settings?: Record<string, { visibility?: number; updated_at?: string }>;
@@ -197,11 +178,11 @@ export async function fetchUserProfile(env: Env, id: string): Promise<UserProfil
   const tokens = userTokens(env);
   if (tokens.length === 0) return { data: null, status: 0, retryAfter: 0 };
 
-  // Pull mutuals too — they ride on the same request, so it's free extra data.
-  // (Only mutuals with the userbot account are visible, by Discord's design.)
+  // We don't surface mutuals, so don't ask for them (skips the extra guild
+  // name/icon resolution work they'd otherwise trigger downstream).
   const url =
     `${apiBase(env)}/users/${id}/profile` +
-    `?with_mutual_guilds=true&with_mutual_friends=true`;
+    `?with_mutual_guilds=false&with_mutual_friends=false&with_mutual_friends_count=false`;
 
   // Spread load: start on a random token, then rotate to the next on a 429.
   const start = Math.floor(Math.random() * tokens.length);

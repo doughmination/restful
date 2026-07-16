@@ -107,7 +107,7 @@ export const PRIVACY_HTML = pageShell(
 <ul>
   <li><strong>Visit logs.</strong> Requests logged via the site frontend record IP address, request path, user agent, and timestamp. They exist purely for security and abuse monitoring (spotting floods and probes) and are visible only to the admin. They are not shared with anyone and are cleared periodically.</li>
   <li><strong>Guestbook entries.</strong> Name, message, and optional website are public by design. The submitting IP is used transiently for rate limiting (one post per 60 seconds) and spam protection (Cloudflare Turnstile).</li>
-  <li><strong>Discord presence & profiles.</strong> The API tracks live presence only for users who share a Discord server with its bot (the Lanyard model). Presence is held in memory only and never written to storage. Profile data (avatar, badges, connections) is cached for minutes-to-hours and then expires on its own.</li>
+  <li><strong>Discord presence & profiles.</strong> The API tracks live presence only for users who share a Discord server with its bot. Presence is held in memory only and never written to storage. Profile data (avatar, badges, connections) is fetched live from Discord on each request and not stored.</li>
   <li><strong>Minecraft & Hypixel data.</strong> Public data fetched from Mojang/Hypixel on request, cached for about 5 minutes. The vanilla-cape catalogue keeps cape textures (not player identities) permanently.</li>
   <li><strong>Accounts & devices.</strong> Plural-system accounts (username, password hash, display name) and device/battery reports are stored for the people who use them — these are private to the system's own users.</li>
 </ul>

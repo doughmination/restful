@@ -4,8 +4,9 @@
  * Namespaces
  *   /v2/ws            — the single realtime socket for ALL live updates
  *                       (presence, fronting, mental state, devices)  (SystemState DO)
- *   /v2/lanyard/*     — live presence REST (users / status)
- *   /v2/discord/*     — general Discord info: profile, badges, guilds, girls
+ *   /v2/discord/*     — Discord users (profile + badges + presence + equipped
+ *                       collectibles, one merged record), guilds, girls, status
+ *                       (the old /v2/lanyard/* presence routes now live here)
  *   /v2/plural/*      — Doughmination system API   (SystemState DO)
  *   /v2/devices/*     — device state (battery, etc.) (SystemState DO)
  *   /v2/guestbook/*   — public guestbook            (SystemState DO)
@@ -123,9 +124,6 @@ function buildRecord(
     connected_accounts: profile.connected_accounts,
     wishlist: profile.wishlist ?? null,
     collectibles_resolved: profile.collectibles_resolved ?? null,
-    mutual_guilds: profile.mutual_guilds ?? null,
-    mutual_friends: profile.mutual_friends ?? null,
-    mutual_friends_count: profile.mutual_friends_count ?? null,
     guild_memberships: profile.guild_memberships ?? null,
     pronoundb: profile.pronoundb ?? null,
     timezone: profile.timezone ?? null,
@@ -241,8 +239,8 @@ export default {
       );
     }
 
-    // ---- Lanyard gateway status (debug) ----------------------------------
-    if (path === "/v2/lanyard/status") {
+    // ---- Gateway status (debug) ------------------------------------------
+    if (path === "/v2/discord/status") {
       const res = await gatewayStub(env).fetch("https://do/status");
       const body = await res.json();
       return json({ success: true, data: body as never });
@@ -380,18 +378,6 @@ export default {
       return json<UnifiedMinecraftHypixel>({ success: true, data });
     }
 
-    // ---- /v2/lanyard/users  (batch presence) -----------------------------
-    if (path === "/v2/lanyard/users") {
-      const ids = parseIds(url);
-      const bad = validateIds(ids);
-      if (bad) return bad;
-
-      const presences = await fetchAllPresences(env);
-      const data: Record<string, UnifiedPresence | null> = {};
-      for (const id of ids) data[id] = presences[id] ?? null;
-      return json<Record<string, UnifiedPresence | null>>({ success: true, data });
-    }
-
     // ---- /v2/discord/users  (batch: merged profile + presence) -----------
     // Full user record (profile + badges + live presence) in one round-trip:
     // one DO call for all presences, profiles fetched in parallel (KV-cached).
@@ -412,26 +398,6 @@ export default {
         data[id] = profile ? buildRecord(profile, presences[id] ?? null) : null;
       });
       return json<Record<string, UnifiedRecord | null>>({ success: true, data });
-    }
-
-    // ---- /v2/lanyard/users/:id  (presence) -------------------------------
-    const lm = path.match(/^\/v2\/lanyard\/users\/(\d{1,32})$/);
-    if (lm) {
-      const id = lm[1];
-      if (!ID_RE.test(id)) {
-        return json({ success: false, error: { code: "invalid_id", message: "Not a Discord snowflake." } }, 400);
-      }
-      const presence = await fetchPresence(env, id);
-      if (!presence) {
-        return json(
-          {
-            success: false,
-            error: { code: "not_monitored", message: "User shares no monitored guild with the bot." },
-          },
-          404,
-        );
-      }
-      return json<UnifiedPresence>({ success: true, data: presence });
     }
 
     // ---- /v2/discord/users/:id  (merged profile + presence) --------------

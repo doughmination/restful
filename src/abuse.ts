@@ -69,7 +69,7 @@ export const ABUSE_HTML = `<!doctype html>
 </div>
 
 <h2>What this service is</h2>
-<p>This API serves live Discord presence and public profile data for a small set of tracked users (Lanyard-style), Minecraft skin/Hypixel lookups, a public guestbook, and the Doughmination plural-system API. It only tracks Discord users who share a server with its bot, the same model as Lanyard.</p>
+<p>This API serves live Discord presence and public profile data for a small set of tracked users, Minecraft skin/Hypixel lookups, a public guestbook, and the Doughmination plural-system API. It only tracks Discord users who share a server with its bot.</p>
 
 <h2>Reporting abuse</h2>
 <p>Email <a href="mailto:${ABUSE_CONTACT}">${ABUSE_CONTACT}</a> if you see this service being used for, or serving, any of the following:</p>

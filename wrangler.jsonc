@@ -58,7 +58,6 @@
 	"vars": {
 		"DISCORD_API_VERSION": "9",
 		"TRACKED_GUILD_IDS": "",
-		"PROFILE_CACHE_TTL_SECONDS": "1800",
 		"DISCORD_CLIENT_BUILD_NUMBER": "579073",
 		"GIRLS_GUILD_ID": "1498839518265213069",
 		// Guilds to resolve per-user membership for (roles/join/boost/nick/avatar/

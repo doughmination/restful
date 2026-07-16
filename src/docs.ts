@@ -197,7 +197,7 @@ export const DOCS_HTML = `<!doctype html>
 <header>
   <div class="header-text">
     <h1>Doughmination API reference</h1>
-    <p>Universal API: live Discord presence (Lanyard), Discord profiles, Minecraft skins & Hypixel stats, the plural system, and misc services. Base URL: <code>https://doughmination.uk/v2</code> · <a class="self" href="/openapi.json">OpenAPI spec</a> · <a class="self" href="/abuse">Abuse</a> · <a class="self" href="/terms">Terms</a> · <a class="self" href="/privacy">Privacy</a></p>
+    <p>Universal API: live Discord presence, Discord profiles, Minecraft skins & Hypixel stats, the plural system, and misc services. Base URL: <code>https://doughmination.uk/v2</code> · <a class="self" href="/openapi.json">OpenAPI spec</a> · <a class="self" href="/abuse">Abuse</a> · <a class="self" href="/terms">Terms</a> · <a class="self" href="/privacy">Privacy</a></p>
   </div>
   <button id="navToggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav">
     <span aria-hidden="true">☰</span>

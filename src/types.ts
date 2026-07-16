@@ -158,10 +158,48 @@ export type WishlistItemType =
   | "avatar_decoration"
   | "profile_effect"
   | "nameplate"
+  | "profile_frame"
   | "bundle"
   | "variants_group"
   | "external_sku"
   | "unknown";
+
+/**
+ * One collectible a user has EQUIPPED on their profile, resolved from the
+ * `collectibles` blob on the (rich) profile. Discord returns that blob as a map
+ * of slot -> { sku_id, ... } (e.g. `nameplate`, and — since mid-2026 — the new
+ * `profile_frame` Shop collectible). We resolve each slot's SKU via
+ * GET /collectibles-products/{sku_id} to get its name + image assets, so the
+ * frontend can render whatever the user is wearing without knowing the slot
+ * names ahead of time. Forward-compatible: an unrecognised slot still resolves.
+ */
+export interface UnifiedCollectible {
+  /** The slot key from the profile's collectibles blob ("nameplate",
+   *  "profile_frame", …). Passed through raw so new slots surface immediately. */
+  slot: string;
+  /** SKU id of the equipped collectible product. */
+  sku_id: string;
+  /** Human-readable kind resolved from the product's numeric type. */
+  type: WishlistItemType;
+  /** Raw Discord numeric product type (0/1/2/…); null if unresolved. */
+  type_id: number | null;
+  /** Product name, e.g. "Angel" (null if the product lookup failed). */
+  name: string | null;
+  /** Short product description/summary when present. */
+  summary: string | null;
+  /** Accessibility label / alt text from Discord. */
+  label: string | null;
+  /** Still image (PNG / APNG first frame). */
+  static_image_url: string | null;
+  /** Animated image (APNG) when the collectible animates. */
+  animated_image_url: string | null;
+  /** Video preview (WEBM/MP4) when present. */
+  video_url: string | null;
+  /** Nameplate colour palette (e.g. "bubble_gum"); null for other kinds. */
+  palette: string | null;
+  /** Unix timestamp (seconds) the equipped item expires; null if permanent. */
+  expires_at: number | null;
+}
 
 /**
  * One Discord Shop collectible a user has saved to their profile wishlist.
@@ -369,6 +407,11 @@ export interface UnifiedRecord {
    *  null when unavailable (no user token / proxy, or the source was blocked);
    *  [] means we reached the source and the wishlist is empty. */
   wishlist: UnifiedWishlistItem[] | null;
+  /** Collectibles the user has EQUIPPED (nameplate, profile frame, …), resolved
+   *  from the rich profile's `collectibles` blob to names + image assets.
+   *  null when unavailable (no user token, or the source was blocked);
+   *  [] means the profile was reachable but nothing is equipped. */
+  collectibles_resolved: UnifiedCollectible[] | null;
   /** Guilds shared with the userbot account (rich profile, with_mutual_guilds).
    *  null when unavailable; [] when none. */
   mutual_guilds: UnifiedMutualGuild[] | null;

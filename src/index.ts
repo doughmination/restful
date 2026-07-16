@@ -122,6 +122,7 @@ function buildRecord(
     clientBadges: profile.clientBadges,
     connected_accounts: profile.connected_accounts,
     wishlist: profile.wishlist ?? null,
+    collectibles_resolved: profile.collectibles_resolved ?? null,
     mutual_guilds: profile.mutual_guilds ?? null,
     mutual_friends: profile.mutual_friends ?? null,
     mutual_friends_count: profile.mutual_friends_count ?? null,

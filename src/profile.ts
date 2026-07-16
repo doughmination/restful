@@ -16,6 +16,7 @@ import type {
   UnifiedMutualGuild,
   UnifiedPremium,
   UnifiedReviews,
+  UnifiedCollectible,
   UnifiedTimezone,
   UnifiedUser,
   UnifiedWishlistItem,
@@ -28,6 +29,7 @@ import {
   bannerUrl,
   CDN,
   clanBadgeUrl,
+  collectibleSlotType,
   collectibleTypeName,
   decodeUserFlags,
   decorationUrl,
@@ -39,9 +41,12 @@ import {
 } from "./discord/constants";
 import {
   fetchBotUser,
+  fetchCollectibleProduct,
   fetchGuildBasic,
   fetchUserProfile,
   fetchWishlist,
+  type RawCollectibleItem,
+  type RawCollectibleProduct,
   type RawDiscordUser,
   type RawMutualFriend,
   type RawMutualGuild,
@@ -60,6 +65,9 @@ export interface ProfileResult {
   connected_accounts: UnifiedConnectedAccount[];
   /** Shop collectibles saved to the profile; null when unavailable. */
   wishlist: UnifiedWishlistItem[] | null;
+  /** Collectibles the user has EQUIPPED (nameplate, profile frame, …),
+   *  resolved to names + assets; null when unavailable. */
+  collectibles_resolved: UnifiedCollectible[] | null;
   /** Guilds shared with the userbot account (rich profile). */
   mutual_guilds: UnifiedMutualGuild[] | null;
   /** Friends shared with the userbot account (rich profile). */
@@ -399,6 +407,157 @@ async function buildWishlist(
   return out;
 }
 
+// ---- equipped collectibles (profile's `collectibles` blob) --------------
+// The rich profile carries a `collectibles` map: slot -> { sku_id, … } for
+// whatever the user has EQUIPPED (nameplate, and since mid-2026 the new
+// `profile_frame`). Unlike the wishlist, the blob only has SKU ids, so we
+// resolve each via GET /collectibles-products/{sku_id} to get names + assets.
+// Written generically over the slot keys so a new collectible type surfaces
+// without a code change.
+
+/** KV key for a resolved collectible product (global, shared across viewers). */
+function collectibleKey(skuId: string): string {
+  return `collectible:${skuId}`;
+}
+
+/** Fetch + cache one collectible product by SKU id (~1h; products are stable). */
+async function getCollectibleProduct(
+  env: Env,
+  skuId: string,
+  ctx?: ExecutionContext,
+  force = false
+): Promise<RawCollectibleProduct | null> {
+  if (!force) {
+    const cached = (await env.PROFILE_CACHE.get(collectibleKey(skuId), "json")) as
+      | RawCollectibleProduct
+      | null;
+    if (cached) return cached;
+  }
+  const raw = await fetchCollectibleProduct(env, skuId);
+  if (!raw) return null;
+  const write = env.PROFILE_CACHE.put(collectibleKey(skuId), JSON.stringify(raw), {
+    expirationTtl: 3600,
+  });
+  if (ctx) ctx.waitUntil(write);
+  else await write;
+  return raw;
+}
+
+/** Pick the item from a product that matches the slot (else the first item). */
+function pickCollectibleItem(
+  product: RawCollectibleProduct | null,
+  slot: string
+): RawCollectibleItem | null {
+  const items = Array.isArray(product?.items) ? product!.items! : [];
+  if (!items.length) return null;
+  const want = collectibleSlotType(slot);
+  const match = items.find((it) => collectibleTypeName(it?.type) === want);
+  return match ?? items[0];
+}
+
+/** Resolve static/animated/video URLs for one equipped collectible. Prefers the
+ *  product item's ready-made `assets`; falls back to constructing them from the
+ *  asset path (so a product-lookup failure still yields nameplate/deco art). */
+function collectibleImages(
+  item: RawCollectibleItem | null,
+  slot: string,
+  blobAsset: string | undefined
+): Pick<UnifiedCollectible, "static_image_url" | "animated_image_url" | "video_url"> {
+  const a = (item && item.assets) || {};
+  let stat: string | null = a.static_image_url ?? null;
+  let anim: string | null = a.animated_image_url ?? null;
+  let vid: string | null = a.video_url ?? null;
+  if (!stat && !anim && !vid) {
+    const type = item?.type;
+    const asset = item?.asset ?? blobAsset;
+    if ((type === 2 || slot === "nameplate") && asset) {
+      // nameplate — still PNG + WEBM under /assets/collectibles/
+      stat = nameplateStaticUrl(asset);
+      vid = nameplateVideoUrl(asset);
+    } else if (type === 0 && asset) {
+      // avatar decoration — APNG served at .png
+      stat = avatarDecorationImageUrl(asset);
+      anim = avatarDecorationImageUrl(asset);
+    } else if (type === 1) {
+      // profile effect — image fields are full URLs on the item itself
+      stat = item?.staticFrameSrc ?? item?.thumbnailPreviewSrc ?? null;
+      anim = item?.thumbnailPreviewSrc ?? item?.reducedMotionSrc ?? null;
+    }
+    // profile_frame (+ any future kind): assets arrive as full URLs on the
+    // product item, so if those were absent there's nothing to reconstruct.
+  }
+  return { static_image_url: stat, animated_image_url: anim, video_url: vid };
+}
+
+/**
+ * Build the equipped-collectibles list from the rich profile's `collectibles`
+ * blob. Iterates every slot with a `sku_id`, resolves the product, and maps it
+ * to a UnifiedCollectible. Returns null when the blob is absent (so a bot-only
+ * refresh keeps the cached list); [] when the profile has no equipped
+ * collectibles. A per-item product-lookup failure still emits an entry built
+ * from the blob's own fields rather than dropping the equipped item.
+ */
+async function buildCollectibles(
+  env: Env,
+  rawCollectibles: Record<string, unknown> | null | undefined,
+  ctx?: ExecutionContext,
+  force = false
+): Promise<UnifiedCollectible[] | null> {
+  if (!rawCollectibles || typeof rawCollectibles !== "object") return null;
+  const entries = Object.entries(rawCollectibles).filter(
+    ([, v]) => v && typeof v === "object"
+  );
+  if (!entries.length) return [];
+
+  const out: UnifiedCollectible[] = [];
+  for (const [slot, vRaw] of entries) {
+    const v = vRaw as Record<string, any>;
+    const skuId = typeof v.sku_id === "string" ? v.sku_id : null;
+    if (!skuId) continue;
+
+    const product = await getCollectibleProduct(env, skuId, ctx, force);
+    const item = pickCollectibleItem(product, slot);
+
+    const typeId =
+      typeof item?.type === "number"
+        ? item.type
+        : typeof product?.type === "number"
+        ? product.type
+        : null;
+    let kind = collectibleTypeName(typeId);
+    if (kind === "unknown") kind = collectibleSlotType(slot);
+
+    const images = collectibleImages(
+      item,
+      slot,
+      typeof v.asset === "string" ? v.asset : undefined
+    );
+
+    out.push({
+      slot,
+      sku_id: skuId,
+      type: kind,
+      type_id: typeId,
+      name: product?.name ?? item?.title ?? null,
+      summary: product?.summary ?? item?.description ?? null,
+      label:
+        (typeof v.label === "string" ? v.label : null) ??
+        item?.label ??
+        item?.accessibilityLabel ??
+        null,
+      ...images,
+      palette:
+        typeof v.palette === "string"
+          ? v.palette
+          : typeof item?.palette === "string"
+          ? item.palette
+          : null,
+      expires_at: typeof v.expires_at === "number" ? v.expires_at : null,
+    });
+  }
+  return out;
+}
+
 function cacheKey(id: string): string {
   return `profile:${id}`;
 }
@@ -467,6 +626,11 @@ export async function getProfile(
     if (built.wishlist == null && cached?.wishlist != null) {
       built.wishlist = cached.wishlist;
     }
+    // Same for equipped collectibles — a 429 on the product lookups shouldn't
+    // wipe a previously resolved list.
+    if (built.collectibles_resolved == null && cached?.collectibles_resolved != null) {
+      built.collectibles_resolved = cached.collectibles_resolved;
+    }
     const write = writeCache(env, id, built);
     if (ctx) ctx.waitUntil(write);
     else await write;
@@ -507,6 +671,9 @@ function mergeRichOverBot(cached: CachedProfile, bot: ProfileResult): CachedProf
     // Bot-only refreshes can't read the wishlist / mutuals (they ride on the
     // rich profile), so keep the cached ones rather than dropping to null.
     wishlist: bot.wishlist != null ? bot.wishlist : cached.wishlist,
+    // Equipped collectibles ride on the rich profile too — keep the cached list.
+    collectibles_resolved:
+      bot.collectibles_resolved != null ? bot.collectibles_resolved : cached.collectibles_resolved,
     mutual_guilds: cached.mutual_guilds,
     mutual_friends: cached.mutual_friends,
     mutual_friends_count: cached.mutual_friends_count,
@@ -530,6 +697,7 @@ async function writeCache(env: Env, id: string, result: ProfileResult): Promise<
       clientBadges: result.clientBadges,
       connected_accounts: result.connected_accounts,
       wishlist: result.wishlist,
+      collectibles_resolved: result.collectibles_resolved,
       mutual_guilds: result.mutual_guilds,
       mutual_friends: result.mutual_friends,
       mutual_friends_count: result.mutual_friends_count,
@@ -611,16 +779,25 @@ async function buildFreshProfile(
 
     // Fetch everything that doesn't depend on the profile body in parallel.
     // Wishlist + mutual guilds need the profile, so they run alongside.
-    const [wishlist, clientBadges, mutualGuilds, memberships, pronoundb, timezone, reviews] =
-      await Promise.all([
-        buildWishlist(env, profile, ctx, force),
-        getClientBadges(env, id, ctx, force),
-        buildMutualGuilds(env, profile.mutual_guilds, ctx),
-        getMemberships(env, id, ctx, force).catch(() => null),
-        getPronouns(env, id, ctx, force).catch(() => null),
-        getTimezone(env, id, ctx, force).catch(() => null),
-        getReviews(env, id, ctx, force).catch(() => null),
-      ]);
+    const [
+      wishlist,
+      collectiblesResolved,
+      clientBadges,
+      mutualGuilds,
+      memberships,
+      pronoundb,
+      timezone,
+      reviews,
+    ] = await Promise.all([
+      buildWishlist(env, profile, ctx, force),
+      buildCollectibles(env, u.collectibles as Record<string, unknown> | null, ctx, force),
+      getClientBadges(env, id, ctx, force),
+      buildMutualGuilds(env, profile.mutual_guilds, ctx),
+      getMemberships(env, id, ctx, force).catch(() => null),
+      getPronouns(env, id, ctx, force).catch(() => null),
+      getTimezone(env, id, ctx, force).catch(() => null),
+      getReviews(env, id, ctx, force).catch(() => null),
+    ]);
 
     return {
       result: {
@@ -630,6 +807,7 @@ async function buildFreshProfile(
         clientBadges,
         connected_accounts: connected,
         wishlist,
+        collectibles_resolved: collectiblesResolved,
         mutual_guilds: mutualGuilds,
         mutual_friends: buildMutualFriends(profile.mutual_friends),
         mutual_friends_count:
@@ -667,6 +845,7 @@ async function buildFreshProfile(
       clientBadges,
       connected_accounts: [],
       wishlist: null,
+      collectibles_resolved: null,
       mutual_guilds: null,
       mutual_friends: null,
       mutual_friends_count: null,

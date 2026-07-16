@@ -23,7 +23,7 @@ function apiBase(env: Env): string {
 // Matched to a real Firefox web client (stable channel). Keep these in sync with
 // an actual client's X-Super-Properties — re-grab and bump when they drift.
 const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:152.0) Gecko/20100101 Firefox/152.0";
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0";
 
 // A real web client also sends these per-"launch" identifiers. Discord doesn't
 // appear to validate them (Dustin runs static ones fine for months), so we mint
@@ -46,19 +46,19 @@ function getLaunchIdentity() {
 }
 
 function superProperties(env: Env): string {
-  const build = Number(env.DISCORD_CLIENT_BUILD_NUMBER || "565311");
+  const build = Number(env.DISCORD_CLIENT_BUILD_NUMBER || "579073");
   // Field set matched to a real Firefox WEB client. Do NOT add desktop-only
   // fields (native_build_number, os_arch, X-Installation-ID, …) — a "Firefox"
   // client that claims those is inconsistent and reads as MORE suspicious.
   const props = {
-    os: "Windows",
+    os: "Mac OS X",
     browser: "Firefox",
     device: "",
     system_locale: "en-GB",
     has_client_mods: false,
     browser_user_agent: BROWSER_UA,
     browser_version: "152.0",
-    os_version: "10",
+    os_version: "10.15",
     referrer: "",
     referring_domain: "",
     referrer_current: "",
@@ -282,6 +282,86 @@ export async function fetchWishlist(env: Env, wishlistId: string): Promise<Wishl
     lastStatus = rb.status || lastStatus;
   }
   return { raw: null, status: lastStatus };
+}
+
+
+// ---- collectibles products (resolve an equipped collectible's SKU) -------
+// The rich profile's `collectibles` blob only carries SKU ids (+ a little
+// metadata) per slot — nameplate, and since mid-2026 the new `profile_frame`.
+// GET /collectibles-products/{sku_id} resolves one of those SKUs into a full
+// product (name, summary, styles, and an `items[]` array whose entries carry
+// ready-made static/animated/video asset URLs). Same fingerprint trick as the
+// profile call so we get the client's gentler rate limits; bot token fallback.
+
+/** One resolved item inside a collectible product (avatar deco / effect /
+ *  nameplate / frame). Only the fields we surface are typed; the rest ride
+ *  along untyped so a brand-new item kind still passes through. */
+export interface RawCollectibleItem {
+  type?: number;
+  id?: string;
+  sku_id?: string;
+  asset?: string;
+  label?: string;
+  palette?: string;
+  title?: string;
+  description?: string;
+  accessibilityLabel?: string;
+  assets?: {
+    static_image_url?: string | null;
+    animated_image_url?: string | null;
+    video_url?: string | null;
+  } | null;
+  // profile-effect image fields live directly on the item
+  staticFrameSrc?: string | null;
+  thumbnailPreviewSrc?: string | null;
+  reducedMotionSrc?: string | null;
+  [k: string]: unknown;
+}
+
+export interface RawCollectibleProduct {
+  sku_id?: string;
+  store_listing_id?: string;
+  type?: number;
+  name?: string;
+  summary?: string;
+  items?: RawCollectibleItem[];
+  [k: string]: unknown;
+}
+
+/**
+ * Resolve one collectible SKU to its product. User token + client fingerprint
+ * first (better rate limits, and some collectibles are gated to it), bot token
+ * as a fallback; configured API version then v10. null on failure.
+ */
+export async function fetchCollectibleProduct(
+  env: Env,
+  skuId: string
+): Promise<RawCollectibleProduct | null> {
+  const configured = env.DISCORD_API_VERSION || "10";
+  const versions = configured === "10" ? ["10"] : [configured, "10"];
+  const tokens = userTokens(env);
+  const locale = "en-GB";
+
+  for (const ver of versions) {
+    const url =
+      `https://discord.com/api/v${ver}/collectibles-products/${skuId}` +
+      `?locale=${locale}`;
+    for (let i = 0; i < tokens.length; i++) {
+      const r = await tryJson(url, clientHeaders(env, tokens[i]), `collectible ${skuId} v${ver} user#${i + 1}`);
+      if (r.raw) return r.raw as RawCollectibleProduct;
+      // 404/429 → try next token/version; anything else → give up this version.
+      if (r.status !== 429 && r.status !== 404) break;
+    }
+    if (env.DISCORD_BOT_TOKEN) {
+      const rb = await tryJson(
+        url,
+        { Authorization: `Bot ${env.DISCORD_BOT_TOKEN}` },
+        `collectible ${skuId} v${ver} bot`
+      );
+      if (rb.raw) return rb.raw as RawCollectibleProduct;
+    }
+  }
+  return null;
 }
 
 

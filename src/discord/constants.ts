@@ -206,12 +206,39 @@ export function collectibleTypeName(type: number | null | undefined): WishlistIt
       return "profile_effect";
     case 2:
       return "nameplate";
+    case 3:
+      // Profile Frames — new Shop collectible (mid-2026). Type id inferred as
+      // the next sequential value; the slot-name fallback below covers us if
+      // Discord picked a different number.
+      return "profile_frame";
     case 1000:
       return "bundle";
     case 2000:
       return "variants_group";
     case 3000:
       return "external_sku";
+    default:
+      return "unknown";
+  }
+}
+
+/**
+ * Map a `collectibles` blob slot key ("nameplate", "profile_frame", …) to our
+ * kind. Used as a fallback when the resolved product's numeric type isn't one
+ * we recognise yet, so a newly-added collectible slot still gets a sensible
+ * kind instead of "unknown". Unknown slots pass through as-is.
+ */
+export function collectibleSlotType(slot: string): WishlistItemType {
+  switch (slot) {
+    case "avatar_decoration":
+      return "avatar_decoration";
+    case "profile_effect":
+      return "profile_effect";
+    case "nameplate":
+      return "nameplate";
+    case "profile_frame":
+    case "frame":
+      return "profile_frame";
     default:
       return "unknown";
   }

@@ -164,21 +164,124 @@ export interface UserProfileFetch {
   retryAfter: number;
 }
 
-/** Configured user tokens (1 or 2), in order, skipping blanks. */
+/** Configured user tokens, in slot order, skipping blanks. */
 function userTokens(env: Env): string[] {
   return [env.DISCORD_USER_TOKEN, env.DISCORD_USER_TOKEN2, env.DISCORD_USER_TOKEN3].filter(
     (t): t is string => !!t && t.trim().length > 0
   );
 }
 
+/* ---- dead-token quarantine ---------------------------------------------
+ * A user token dies for good (password change, "log out all devices", or
+ * Discord flagging the automation) — unlike a 429 it will never recover. Before
+ * this, a 401 aborted the whole attempt, so one dead token in slot 1 meant every
+ * request burned a call on it and then fell back to bot-tier profiles, even with
+ * healthy tokens sitting in slots 2 and 3.
+ *
+ * Dead tokens are recorded in one KV key and skipped until the entry lapses.
+ * The entry is keyed by a HASH OF THE TOKEN VALUE, not its slot index — so
+ * dropping a fresh token into DISCORD_USER_TOKEN is picked up immediately
+ * rather than inheriting the old one's quarantine.
+ */
+
+const DEAD_TOKENS_KEY = "profile:dead-tokens";
+/** How long a token stays quarantined. Long, because 401s don't self-heal;
+ *  it re-tests occasionally in case the token was reinstated. */
+const DEAD_TTL_MS = 6 * 60 * 60 * 1000;
+
+type DeadMap = Record<string, number>;
+
+/** Short stable id for a token — never log or store the token itself. */
+async function tokenId(token: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(buf).slice(0, 8)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function readDeadMap(env: Env): Promise<DeadMap> {
+  try {
+    const raw = await env.PROFILE_CACHE.get(DEAD_TOKENS_KEY);
+    if (!raw) return {};
+    const map = JSON.parse(raw) as DeadMap;
+    const now = Date.now();
+    // Drop lapsed entries on read so the key self-cleans.
+    return Object.fromEntries(Object.entries(map).filter(([, exp]) => exp > now));
+  } catch {
+    return {}; // KV unavailable / corrupt → behave as if nothing is quarantined
+  }
+}
+
+/** Quarantine a token after an unambiguous 401. */
+async function markTokenDead(env: Env, token: string, label: string): Promise<void> {
+  try {
+    const id = await tokenId(token);
+    const map = await readDeadMap(env);
+    if (map[id] && map[id] > Date.now()) return; // already quarantined
+    map[id] = Date.now() + DEAD_TTL_MS;
+    await env.PROFILE_CACHE.put(DEAD_TOKENS_KEY, JSON.stringify(map), {
+      expirationTtl: Math.ceil(DEAD_TTL_MS / 1000) + 60,
+    });
+    console.error(
+      `[dough-api] user token ${label} (${id}) returned 401 — quarantined for ` +
+        `${DEAD_TTL_MS / 3600000}h. Rotate the secret to restore rich profiles.`
+    );
+  } catch {
+    /* quarantine is an optimisation; never fail the request over it */
+  }
+}
+
+export interface LiveToken {
+  token: string;
+  /** Human label for logs, e.g. "#2" — matches the DISCORD_USER_TOKEN slot. */
+  label: string;
+}
+
 /**
- * Rich profile via USER token(s) (self-bot — ToS risk). If two tokens are
- * configured, load is spread across them (random start) and a 429 on one fails
- * over to the other — doubling the /profile rate-limit headroom. Reports the
- * HTTP status so callers can tell a 429 (back off) from a 401/403 token issue.
+ * Configured tokens minus any currently quarantined, in a rotated order so load
+ * spreads across them. Logs loudly when there's nothing usable, because that
+ * silently degrades every profile to bot-tier (no bio, no connected accounts).
+ */
+async function liveTokens(env: Env): Promise<LiveToken[]> {
+  const all = userTokens(env);
+  if (all.length === 0) {
+    console.error(
+      "[dough-api] no DISCORD_USER_TOKEN configured — profiles will be bot-tier " +
+        "(no bio, no connected_accounts, no wishlist). Set the secret to enable rich profiles."
+    );
+    return [];
+  }
+
+  const dead = await readDeadMap(env);
+  const ids = await Promise.all(all.map(tokenId));
+  const live: LiveToken[] = [];
+  for (let i = 0; i < all.length; i++) {
+    if (dead[ids[i]] && dead[ids[i]] > Date.now()) continue;
+    live.push({ token: all[i], label: `#${i + 1}` });
+  }
+
+  if (live.length === 0) {
+    console.error(
+      `[dough-api] all ${all.length} user token(s) are quarantined as dead — ` +
+        "profiles are bot-tier until a working token is set."
+    );
+    return [];
+  }
+
+  // Spread load: rotate the starting point rather than always hitting slot 1.
+  const start = Math.floor(Math.random() * live.length);
+  return live.slice(start).concat(live.slice(0, start));
+}
+
+/**
+ * Rich profile via USER token(s) (self-bot — ToS risk). Load is spread across
+ * the configured tokens, and both a 429 (rate limited) and a 401 (token dead)
+ * fail over to the next one; a 401 additionally quarantines that token so it
+ * isn't retried on every subsequent request. Reports the HTTP status so callers
+ * can tell a 429 (back off) from a token problem.
  */
 export async function fetchUserProfile(env: Env, id: string): Promise<UserProfileFetch> {
-  const tokens = userTokens(env);
+  const tokens = await liveTokens(env);
   if (tokens.length === 0) return { data: null, status: 0, retryAfter: 0 };
 
   // We don't surface mutuals, so don't ask for them (skips the extra guild
@@ -187,26 +290,31 @@ export async function fetchUserProfile(env: Env, id: string): Promise<UserProfil
     `${apiBase(env)}/users/${id}/profile` +
     `?with_mutual_guilds=false&with_mutual_friends=false&with_mutual_friends_count=false`;
 
-  // Spread load: start on a random token, then rotate to the next on a 429.
-  const start = Math.floor(Math.random() * tokens.length);
   let lastStatus = 0;
   let lastRetryAfter = 0;
 
-  for (let i = 0; i < tokens.length; i++) {
-    const idx = (start + i) % tokens.length;
-    const res = await fetch(url, { headers: clientHeaders(env, tokens[idx]) });
+  for (const { token, label } of tokens) {
+    const res = await fetch(url, { headers: clientHeaders(env, token) });
     if (res.ok) {
       return { data: (await res.json()) as RawProfileResponse, status: 200, retryAfter: 0 };
     }
     lastStatus = res.status;
     lastRetryAfter = Number(res.headers.get("retry-after")) || 0;
     console.warn(
-      `[dough-api] user-token #${idx + 1} /users/${id}/profile -> HTTP ${res.status}` +
+      `[dough-api] user-token ${label} /users/${id}/profile -> HTTP ${res.status}` +
         (lastRetryAfter ? ` (retry ${lastRetryAfter}s)` : "")
     );
-    // Only a rate-limit is worth retrying on another token; 401/403/404 would
-    // behave the same (or signal a token problem we'd rather surface).
-    if (res.status !== 429) break;
+
+    // 401 → this token is dead: quarantine it and try the next one.
+    if (res.status === 401) {
+      await markTokenDead(env, token, label);
+      continue;
+    }
+    // 429 → this token is throttled but fine: try the next one.
+    if (res.status === 429) continue;
+    // 403/404/5xx are about the request or Discord, not the token — another
+    // token would answer identically, so stop here.
+    break;
   }
   return { data: null, status: lastStatus, retryAfter: lastRetryAfter };
 }
@@ -246,15 +354,20 @@ async function tryJson(url: string, headers: Record<string, string>, label: stri
 export async function fetchWishlist(env: Env, wishlistId: string): Promise<WishlistFetch> {
   const configured = env.DISCORD_API_VERSION || "10";
   const versions = configured === "10" ? ["10"] : [configured, "10"];
-  const tokens = userTokens(env);
+  const tokens = await liveTokens(env);
   let lastStatus = 0;
 
   for (const ver of versions) {
     const url = `https://discord.com/api/v${ver}/wishlists/${wishlistId}`;
-    for (let i = 0; i < tokens.length; i++) {
-      const r = await tryJson(url, clientHeaders(env, tokens[i]), `wishlist ${wishlistId} v${ver} user#${i + 1}`);
+    for (const { token, label } of tokens) {
+      const r = await tryJson(url, clientHeaders(env, token), `wishlist ${wishlistId} v${ver} user${label}`);
       if (r.raw) return r;
       lastStatus = r.status;
+      // A dead token shouldn't burn a request here on every future call either.
+      if (r.status === 401) {
+        await markTokenDead(env, token, label);
+        continue;
+      }
       if (r.status !== 429 && r.status !== 404) break;
     }
     const rb = await tryJson(
@@ -323,16 +436,20 @@ export async function fetchCollectibleProduct(
 ): Promise<RawCollectibleProduct | null> {
   const configured = env.DISCORD_API_VERSION || "10";
   const versions = configured === "10" ? ["10"] : [configured, "10"];
-  const tokens = userTokens(env);
+  const tokens = await liveTokens(env);
   const locale = "en-GB";
 
   for (const ver of versions) {
     const url =
       `https://discord.com/api/v${ver}/collectibles-products/${skuId}` +
       `?locale=${locale}`;
-    for (let i = 0; i < tokens.length; i++) {
-      const r = await tryJson(url, clientHeaders(env, tokens[i]), `collectible ${skuId} v${ver} user#${i + 1}`);
+    for (const { token, label } of tokens) {
+      const r = await tryJson(url, clientHeaders(env, token), `collectible ${skuId} v${ver} user${label}`);
       if (r.raw) return r.raw as RawCollectibleProduct;
+      if (r.status === 401) {
+        await markTokenDead(env, token, label);
+        continue;
+      }
       // 404/429 → try next token/version; anything else → give up this version.
       if (r.status !== 429 && r.status !== 404) break;
     }

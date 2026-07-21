@@ -130,6 +130,14 @@ export async function updateUser(
     }
   }
 
+  // Role assignment (admin/pet) is the owner's job — plain admins can edit
+  // profiles but not grant or revoke roles.
+  const wantsAdminChange = userUpdate.is_admin != null && userUpdate.is_admin !== user.is_admin;
+  const wantsPetChange = userUpdate.is_pet != null && userUpdate.is_pet !== user.is_pet;
+  if ((wantsAdminChange || wantsPetChange) && !requestingUser?.is_owner) {
+    throw new Error("Only the owner can change user roles");
+  }
+
   let passwordHash = user.password_hash;
   if (userUpdate.current_password && userUpdate.new_password) {
     if (!(await verifyPassword(userUpdate.current_password, user.password_hash))) {
@@ -146,11 +154,12 @@ export async function updateUser(
     id: user.id,
     username: user.username,
     password_hash: passwordHash,
-    display_name: userUpdate.display_name ?? user.display_name,
+    // `undefined` = field omitted, keep current value; explicit `null` clears it.
+    display_name: userUpdate.display_name !== undefined ? userUpdate.display_name : user.display_name,
     is_admin: newIsAdmin,
     is_owner: newIsOwner,
     is_pet: newIsPet,
-    avatar_url: userUpdate.avatar_url ?? user.avatar_url ?? null,
+    avatar_url: userUpdate.avatar_url !== undefined ? userUpdate.avatar_url : user.avatar_url ?? null,
   };
 
   users[index] = updatedUser;

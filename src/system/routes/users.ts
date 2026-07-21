@@ -25,9 +25,14 @@ usersRoutes.get("/users", requireAuth, requireAdmin, async (c) => {
   return c.json(users.map(toUserResponse));
 });
 
+/** Render zod issues as a single human-readable message for the frontend. */
+function validationDetail(issues: Array<{ path: PropertyKey[]; message: string }>): string {
+  return issues.map((i) => (i.path.length ? `${i.path.join(".")}: ${i.message}` : i.message)).join("; ");
+}
+
 usersRoutes.post("/users", requireAuth, requireAdmin, async (c) => {
   const parsed = UserCreateSchema.safeParse(await c.req.json().catch(() => ({})));
-  if (!parsed.success) return c.json({ detail: parsed.error.issues }, 422);
+  if (!parsed.success) return c.json({ detail: validationDetail(parsed.error.issues) }, 422);
 
   try {
     const newUser = await createUser(parsed.data, c.get("user") ?? null);
@@ -46,7 +51,7 @@ usersRoutes.put("/users/:user_id", requireAuth, async (c) => {
   }
 
   const parsed = UserUpdateSchema.safeParse(await c.req.json().catch(() => ({})));
-  if (!parsed.success) return c.json({ detail: parsed.error.issues }, 422);
+  if (!parsed.success) return c.json({ detail: validationDetail(parsed.error.issues) }, 422);
 
   try {
     const updated = await updateUser(userId, parsed.data, currentUser);

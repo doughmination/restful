@@ -254,7 +254,7 @@ export default {
           service: "Doughmination API",
           description: "Universal API: live Discord presence + profiles + plural system.",
           licence: "ESAL-2.1",
-          repository_url: "https://github.com/doughmination/restful",
+          repository_url: "https://github.com/doughmination/api",
           docs: "/docs",
           openapi: "/openapi.json",
           health: "/v2/health",
